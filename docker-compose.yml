@@ -1,0 +1,35 @@
+# @format
+
+services:
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${DB_PS_USER}
+      POSTGRES_PASSWORD: ${DB_PS_PASSWORD}
+      POSTGRES_DB: ${DB_PS_DATABASE}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      
+  payment-request-api:
+    build:
+      context: ./payment-request-api
+      dockerfile: Dockerfile
+    env_file:
+      - ./payment-request-api/.env
+    ports:
+      - "8080:8080"
+
+  payment-consumer:
+    build:
+      context: ./payment-consumer
+      dockerfile: Dockerfile
+    env_file:
+      - ./payment-consumer/.env
+    ports:
+      - "8081:8081"
+
+volumes:
+  postgres_data:
