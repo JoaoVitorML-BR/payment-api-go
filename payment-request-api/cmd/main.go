@@ -8,11 +8,13 @@ import (
 )
 
 func main() {
-	router := server.SetupRouter()
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal("Error loading config:", err)
 	}
+	defer cfg.Pool.Close()
+
+	router := server.SetupRouter(cfg)
 
 	if err := server.Run(cfg, router); err != nil {
 		log.Fatal(err)
