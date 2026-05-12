@@ -5,20 +5,21 @@
 package bridge
 
 import (
-	"database/sql"
-	"time"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type PaymentRequest struct {
 	ID                    int64
 	IdempotencyKey        string
-	MerchantReference     sql.NullString
+	MerchantReference     pgtype.Text
 	AmountCents           int64
 	Currency              string
+	PaymentMethod         string
+	Installments          pgtype.Int4
 	Status                string
-	FailureCode           sql.NullString
-	FailureMessage        sql.NullString
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
-	StripePaymentIntentID sql.NullString
+	FailureCode           pgtype.Text
+	FailureMessage        pgtype.Text
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	StripePaymentIntentID pgtype.Text
 }
