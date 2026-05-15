@@ -2,6 +2,7 @@
 package payment
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -22,8 +23,11 @@ type CreatePaymentRequest struct {
 
 // router use this func to create a new instance of PaymentHandler and inject the PaymentService dependency, 
 // this way we can keep the handler decoupled from the service and make it easier to test and maintain in the future.
-func NewPaymentHandler(service *PaymentService) *PaymentHandler {
-	return &PaymentHandler{service: service}
+func NewPaymentHandler(service *PaymentService) (*PaymentHandler, error) {
+	if service == nil {
+		return nil, errors.New("nil service provided to NewPaymentHandler")
+	}
+	return &PaymentHandler{service: service}, nil
 }
 
 func (h *PaymentHandler) CreatePaymentRequestHandler(c *gin.Context) {
