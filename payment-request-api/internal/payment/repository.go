@@ -2,6 +2,7 @@ package payment
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,8 +14,11 @@ type PaymentRepositoryDB struct {
 	queries *dbbridge.Queries
 }
 
-func NewPaymentRepositoryDB(pool *pgxpool.Pool) *PaymentRepositoryDB {
-	return &PaymentRepositoryDB{queries: dbbridge.New(pool)}
+func NewPaymentRepositoryDB(pool *pgxpool.Pool) (*PaymentRepositoryDB, error) {
+	if pool == nil {
+		return nil, errors.New("nil db pool")
+	}
+	return &PaymentRepositoryDB{queries: dbbridge.New(pool)}, nil
 }
 
 func (r *PaymentRepositoryDB) CreatePaymentRequest(ctx context.Context, req CreatePaymentRequest) (CreatePaymentResponse, error) {
