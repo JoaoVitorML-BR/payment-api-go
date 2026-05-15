@@ -7,8 +7,8 @@ package bridge
 
 import (
 	"context"
-	"database/sql"
-	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createPaymentRequest = `-- name: CreatePaymentRequest :one
@@ -17,40 +17,44 @@ INSERT INTO payment_requests (
     merchant_reference,
     amount_cents,
     currency,
+    payment_method,
     status,
     failure_code,
     failure_message,
     stripe_payment_intent_id
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8
+    $1, $2, $3, $4, $5, $6, $7, $8, $9
 )
-RETURNING id, status, created_at, updated_at
+RETURNING id, payment_method, status, created_at, updated_at
 `
 
 type CreatePaymentRequestParams struct {
 	IdempotencyKey        string
-	MerchantReference     sql.NullString
+	MerchantReference     pgtype.Text
 	AmountCents           int64
 	Currency              string
+	PaymentMethod         string
 	Status                string
-	FailureCode           sql.NullString
-	FailureMessage        sql.NullString
-	StripePaymentIntentID sql.NullString
+	FailureCode           pgtype.Text
+	FailureMessage        pgtype.Text
+	StripePaymentIntentID pgtype.Text
 }
 
 type CreatePaymentRequestRow struct {
-	ID        int64
-	Status    string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID            int64
+	PaymentMethod string
+	Status        string
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
 }
 
 func (q *Queries) CreatePaymentRequest(ctx context.Context, arg CreatePaymentRequestParams) (CreatePaymentRequestRow, error) {
-	row := q.db.QueryRowContext(ctx, createPaymentRequest,
+	row := q.db.QueryRow(ctx, createPaymentRequest,
 		arg.IdempotencyKey,
 		arg.MerchantReference,
 		arg.AmountCents,
 		arg.Currency,
+		arg.PaymentMethod,
 		arg.Status,
 		arg.FailureCode,
 		arg.FailureMessage,
@@ -59,6 +63,7 @@ func (q *Queries) CreatePaymentRequest(ctx context.Context, arg CreatePaymentReq
 	var i CreatePaymentRequestRow
 	err := row.Scan(
 		&i.ID,
+		&i.PaymentMethod,
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
