@@ -26,8 +26,11 @@ type PaymentService struct {
 	repo PaymentRepository
 }
 
-func NewPaymentService(repo PaymentRepository) *PaymentService {
-	return &PaymentService{repo: repo}
+func NewPaymentService(repo PaymentRepository) (*PaymentService, error) {
+	if repo == nil {
+		return nil, errors.New("nil repository provided to NewPaymentService")
+	}
+	return &PaymentService{repo: repo}, nil
 }
 
 func (s *PaymentService) CreatePayment(ctx context.Context, req CreatePaymentRequest) (CreatePaymentResponse, error) {
