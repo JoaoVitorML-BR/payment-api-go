@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 
+	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/bootstrap"
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/config"
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/server"
 )
@@ -14,7 +15,10 @@ func main() {
 	}
 	defer cfg.Pool.Close()
 
-	router := server.SetupRouter(cfg)
+	router, err := bootstrap.NewRouter(cfg)
+	if err != nil {
+		log.Fatal("failed to initialize router:", err)
+	}
 
 	if err := server.Run(cfg, router); err != nil {
 		log.Fatal(err)
