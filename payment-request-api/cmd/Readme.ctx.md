@@ -30,4 +30,7 @@ Relationship with bootstrap:
 - `bootstrap` decides how the application is assembled
 - `server` decides how routes are registered and the HTTP server runs
 
+## CreatePayment Flow Entry
+When `POST /payment` is received, the request flows through the handler → service → repository + publisher.
+
 In short: `main` is only the launcher. The app composition lives in bootstrap, and the HTTP concerns live in server.
