@@ -2,12 +2,16 @@
 
 The `infra` area contains infrastructure concerns that support the application but are not part of HTTP routing or business rules.
 
-In this project, `internal/infra` currently focuses on database support:
+In this project, `internal/infra` contains:
 
-- SQL schema definitions used by sqlc
-- SQL queries used to generate typed database code
-- generated bridge code used by the payment repository
-- migration files that create and evolve the PostgreSQL schema
+**Database (`database/`)**: SQL schema, queries, bridge code, migrations
+
+**Messaging (`messaging/rabbitmq/`)**: 
+- Declares durable exchange `payment.events` (topic type)
+- Declares durable queue `payment_requests` 
+- Binds queue to exchange with routing key `payment.requested.v1`
+- Publishes `PaymentRequestedEvent` as persistent JSON
+- **Note**: Queue binding ensures messages are retained for consumer pickup
 
 Why it exists:
 
