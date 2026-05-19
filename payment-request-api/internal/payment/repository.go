@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -42,6 +43,20 @@ func (r *PaymentRepositoryDB) CreatePaymentRequest(ctx context.Context, req Crea
 
 	row, err := r.queries.CreatePaymentRequest(ctx, params)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// conflict happened and INSERT did nothing; fetch existing row
+			existing, err2 := r.queries.GetPaymentRequestByIdempotencyKey(ctx, req.IdempotencyKey)
+			if err2 != nil {
+				return CreatePaymentResponse{}, err2
+			}
+			return CreatePaymentResponse{
+				ID:            existing.ID,
+				PaymentMethod: existing.PaymentMethod,
+				Status:        existing.Status,
+				CreatedAt:     existing.CreatedAt.Time,
+				UpdatedAt:     existing.UpdatedAt.Time,
+			}, nil
+		}
 		return CreatePaymentResponse{}, err
 	}
 
