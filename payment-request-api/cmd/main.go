@@ -15,10 +15,7 @@ func main() {
 	}
 	defer cfg.Pool.Close()
 
-	router, err := bootstrap.NewRouter(cfg)
-	if err != nil {
-		log.Fatal("failed to initialize router:", err)
-	}
+	router := bootstrap.NewRouter(cfg)
 
 	if err := server.Run(cfg, router); err != nil {
 		log.Fatal(err)

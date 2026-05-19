@@ -2,10 +2,10 @@
 
 The `config` package is responsible for loading runtime configuration and preparing shared infrastructure needed by the application at startup.
 
-In this project, `internal/config/config.go` currently does two things:
+In this project, `internal/config/config.go` loads:
 
-- loads environment variables from `.env` when present
-- builds and validates the PostgreSQL connection pool used by the rest of the application
+- PostgreSQL connection pool (for CreatePayment database persistence)
+- RabbitMQ configuration is read directly from env in bootstrap layer (RABBITMQ_URL, RABBITMQ_QUEUE)
 
 What this package contains:
 
@@ -36,4 +36,4 @@ Important behavior in this project:
 - the database connection is created and pinged before startup continues
 - the pool is returned so `main` can close it when the process exits
 
-In short: `config` is the startup input layer. It prepares the values and shared resources that the bootstrap and server layers need.
+In short: `config` is the startup input layer. It prepares DB connection pool needed by bootstrap and server. RabbitMQ config is read in bootstrap for publisher initialization.

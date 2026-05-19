@@ -25,6 +25,7 @@ INSERT INTO payment_requests (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9
 )
+ON CONFLICT (idempotency_key) DO NOTHING
 RETURNING id, payment_method, status, created_at, updated_at
 `
 
@@ -61,6 +62,33 @@ func (q *Queries) CreatePaymentRequest(ctx context.Context, arg CreatePaymentReq
 		arg.StripePaymentIntentID,
 	)
 	var i CreatePaymentRequestRow
+	err := row.Scan(
+		&i.ID,
+		&i.PaymentMethod,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getPaymentRequestByIdempotencyKey = `-- name: GetPaymentRequestByIdempotencyKey :one
+SELECT id, payment_method, status, created_at, updated_at
+FROM payment_requests
+WHERE idempotency_key = $1
+`
+
+type GetPaymentRequestByIdempotencyKeyRow struct {
+	ID            int64
+	PaymentMethod string
+	Status        string
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
+func (q *Queries) GetPaymentRequestByIdempotencyKey(ctx context.Context, idempotencyKey string) (GetPaymentRequestByIdempotencyKeyRow, error) {
+	row := q.db.QueryRow(ctx, getPaymentRequestByIdempotencyKey, idempotencyKey)
+	var i GetPaymentRequestByIdempotencyKeyRow
 	err := row.Scan(
 		&i.ID,
 		&i.PaymentMethod,

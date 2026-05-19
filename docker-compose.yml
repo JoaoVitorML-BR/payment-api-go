@@ -3,11 +3,11 @@ services:
   postgres:
     image: postgres:15
     environment:
-      POSTGRES_USER: ${DB_PS_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PS_PASSWORD:-postgres}
-      POSTGRES_DB: ${DB_PS_DATABASE:-payment_request}
+      POSTGRES_USER: ${DB_PS_USER}
+      POSTGRES_PASSWORD: ${DB_PS_PASSWORD}
+      POSTGRES_DB: ${DB_PS_DATABASE}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
