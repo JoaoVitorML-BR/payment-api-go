@@ -1,7 +1,5 @@
 # @format
-
 services:
-
   postgres:
     image: postgres:15
     environment:
@@ -9,10 +7,32 @@ services:
       POSTGRES_PASSWORD: ${DB_PS_PASSWORD}
       POSTGRES_DB: ${DB_PS_DATABASE}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_PS_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # RabbitMQ config
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   payment-request-api:
     build:
       context: ./payment-request-api
@@ -21,6 +41,14 @@ services:
       - ./payment-request-api/.env
     ports:
       - "8080:8080"
+    environment:
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   payment-consumer:
     build:
@@ -30,6 +58,15 @@ services:
       - ./payment-consumer/.env
     ports:
       - "8081:8081"
+    environment:
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
 volumes:
   postgres_data:
+  rabbitmq_data:

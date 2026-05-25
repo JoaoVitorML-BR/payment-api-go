@@ -14,6 +14,7 @@ WORKDIR /app
 # Create a non-root user and copy the built application
 RUN adduser -D -H -u 10001 appuser
 COPY --from=builder /app/main /app/main
+COPY --from=builder /app/.env /app/.env
 
 EXPOSE 8080
 USER appuser

@@ -7,3 +7,4 @@ sql:
       go:
         out: "../bridge"
         package: "bridge"
+        sql_package: "pgx/v5"

@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/config"
-	"github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/database"
+	"github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/database/bridge"
 	consumerstripe "github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/paymentStripe"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -16,7 +16,7 @@ type Dependencies struct {
 
 func Bootstrap(cfg *config.Config) (*Dependencies, error) {
 	log.Println("Bootstrapping payment consumer...")
-	pool, err := database.NewPool(cfg)
+	pool, err := bridge.NewPgxPool(cfg)
 	if err != nil {
 		return nil, err
 	}

@@ -18,8 +18,9 @@ payment-request-api/
     config/
       config.go
     payment/
-      handler.go
-      service.go
+      service.go <- useCase
+      handler.go <- controller
+      repository.go <- persists with databse
     messaging/
       publisher.go
   pkg/               
