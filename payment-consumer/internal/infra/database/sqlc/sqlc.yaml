@@ -1,9 +1,10 @@
 version: "2"
-sql: 
-- engine: "postgresql"
-  schema: "../../schema.sql"
-  queries: "../../queries.sql"
-  gen: 
-    go:
-      out: "../bridge"
-      package: "bridge"
+sql:
+  - engine: "postgresql"
+    schema: "schema.sql"
+    queries: "queries.sql"
+    gen:
+      go:
+        out: "../bridge"
+        package: "bridge"
+        sql_package: "pgx/v5"

@@ -80,7 +80,9 @@ func (p *RabbitMQPaymentRequestedEventPublisher) Publish(event *events.PaymentRe
 		false,
 		false,
 		false,
-		nil,
+		amqp.Table{
+			amqp.QueueTypeArg: amqp.QueueTypeQuorum,
+		},
 	); err != nil {
 		return err
 	}

@@ -12,5 +12,5 @@ CREATE TABLE IF NOT EXISTS payment_attempts (
     processed_at TIMESTAMP WITH TIME ZONE
 );
 
-CREATE INDEX ON payment_attempts (payment_request_id);
-CREATE UNIQUE INDEX ON payment_attempts (payment_request_id, attempt_number);
+CREATE INDEX IF NOT EXISTS payment_attempts_payment_request_id_idx ON payment_attempts (payment_request_id);
+CREATE UNIQUE INDEX IF NOT EXISTS payment_attempts_payment_request_id_attempt_number_idx ON payment_attempts (payment_request_id, attempt_number);
