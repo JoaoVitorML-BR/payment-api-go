@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS payment_attempts (
     stripe_payment_intent_id VARCHAR(255),
     attempt_number INTEGER NOT NULL DEFAULT 1,
     currency CHAR(3) NOT NULL,
-    status VARCHAR(20) NOT NULL,
+    status VARCHAR(50) NOT NULL,
     error_code VARCHAR(255),
     error_message TEXT,
     response JSONB,
