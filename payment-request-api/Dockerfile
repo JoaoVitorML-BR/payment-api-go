@@ -1,10 +1,11 @@
 FROM golang:1.26-alpine AS builder
 WORKDIR /app
 
-COPY go.mod go.sum ./
+COPY payment-request-api/go.mod payment-request-api/go.sum ./
 RUN go mod download
 
-COPY . .
+COPY payment-request-api/ .
+
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -o /app/main ./cmd/main.go
 
