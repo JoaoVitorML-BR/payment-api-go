@@ -14,8 +14,13 @@ func isRetryableStripeError(err error) bool {
 	var stripeErr *sdkstripe.Error
 	if errors.As(err, &stripeErr) {
 		switch stripeErr.Type {
-		case sdkstripe.ErrorTypeAPI, sdkstripe.ErrorTypeIdempotency, sdkstripe.ErrorTypeRateLimit:
+		// API and rate limit errors are transient and worth retrying
+		case sdkstripe.ErrorTypeAPI, sdkstripe.ErrorTypeRateLimit:
 			return true
+		// Idempotency errors indicate the same idempotency key was used with
+		// different parameters — these are not retryable and should be discarded
+		case sdkstripe.ErrorTypeIdempotency:
+			return false
 		case sdkstripe.ErrorTypeCard, sdkstripe.ErrorTypeInvalidRequest:
 			return false
 		default:
