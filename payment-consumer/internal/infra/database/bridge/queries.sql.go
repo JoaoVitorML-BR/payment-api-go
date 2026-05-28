@@ -11,22 +11,65 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getLatestPaymentAttempt = `-- name: GetLatestPaymentAttempt :one
+SELECT payment_request_uuid, stripe_payment_intent_id, stripe_client_secret, attempt_number, currency, status, error_code, error_message, response, created_at, processed_at
+FROM payment_attempts
+WHERE payment_request_uuid = $1
+ORDER BY attempt_number DESC
+LIMIT 1
+`
+
+type GetLatestPaymentAttemptRow struct {
+	PaymentRequestUuid    pgtype.UUID
+	StripePaymentIntentID pgtype.Text
+	StripeClientSecret    pgtype.Text
+	AttemptNumber         int32
+	Currency              string
+	Status                string
+	ErrorCode             pgtype.Text
+	ErrorMessage          pgtype.Text
+	Response              []byte
+	CreatedAt             pgtype.Timestamptz
+	ProcessedAt           pgtype.Timestamptz
+}
+
+func (q *Queries) GetLatestPaymentAttempt(ctx context.Context, paymentRequestUuid pgtype.UUID) (GetLatestPaymentAttemptRow, error) {
+	row := q.db.QueryRow(ctx, getLatestPaymentAttempt, paymentRequestUuid)
+	var i GetLatestPaymentAttemptRow
+	err := row.Scan(
+		&i.PaymentRequestUuid,
+		&i.StripePaymentIntentID,
+		&i.StripeClientSecret,
+		&i.AttemptNumber,
+		&i.Currency,
+		&i.Status,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+		&i.Response,
+		&i.CreatedAt,
+		&i.ProcessedAt,
+	)
+	return i, err
+}
+
 const updatePaymentAttempt = `-- name: UpdatePaymentAttempt :exec
-UPDATE payment_attempts
-SET stripe_payment_intent_id = $2,
-    attempt_number = $3,
-    currency = $4,
-    status = $5,
-    error_code = $6,
-    error_message = $7,
-    response = $8,
-    processed_at = NOW()
-WHERE payment_request_id = $1
+INSERT INTO payment_attempts (payment_request_uuid, stripe_payment_intent_id, stripe_client_secret, attempt_number, currency, status, error_code, error_message, response, processed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+ON CONFLICT (payment_request_uuid, attempt_number) DO UPDATE SET
+  stripe_payment_intent_id = EXCLUDED.stripe_payment_intent_id,
+  stripe_client_secret = EXCLUDED.stripe_client_secret,
+  currency = EXCLUDED.currency,
+  status = EXCLUDED.status,
+  error_code = EXCLUDED.error_code,
+  error_message = EXCLUDED.error_message,
+  response = EXCLUDED.response,
+  processed_at = NOW()
 `
 
 type UpdatePaymentAttemptParams struct {
-	PaymentRequestID      string
+	PaymentRequestUuid    pgtype.UUID
 	StripePaymentIntentID pgtype.Text
+	StripeClientSecret    pgtype.Text
 	AttemptNumber         int32
 	Currency              string
 	Status                string
@@ -37,8 +80,9 @@ type UpdatePaymentAttemptParams struct {
 
 func (q *Queries) UpdatePaymentAttempt(ctx context.Context, arg UpdatePaymentAttemptParams) error {
 	_, err := q.db.Exec(ctx, updatePaymentAttempt,
-		arg.PaymentRequestID,
+		arg.PaymentRequestUuid,
 		arg.StripePaymentIntentID,
+		arg.StripeClientSecret,
 		arg.AttemptNumber,
 		arg.Currency,
 		arg.Status,
@@ -46,5 +90,50 @@ func (q *Queries) UpdatePaymentAttempt(ctx context.Context, arg UpdatePaymentAtt
 		arg.ErrorMessage,
 		arg.Response,
 	)
+	return err
+}
+
+const updatePaymentRequestError = `-- name: UpdatePaymentRequestError :exec
+UPDATE payment_requests
+SET status = $2,
+    failure_code = $3,
+    failure_message = $4,
+    updated_at = NOW()
+WHERE uuid::text = $1
+`
+
+type UpdatePaymentRequestErrorParams struct {
+	Uuid           pgtype.UUID
+	Status         string
+	FailureCode    pgtype.Text
+	FailureMessage pgtype.Text
+}
+
+func (q *Queries) UpdatePaymentRequestError(ctx context.Context, arg UpdatePaymentRequestErrorParams) error {
+	_, err := q.db.Exec(ctx, updatePaymentRequestError,
+		arg.Uuid,
+		arg.Status,
+		arg.FailureCode,
+		arg.FailureMessage,
+	)
+	return err
+}
+
+const updatePaymentRequestSuccess = `-- name: UpdatePaymentRequestSuccess :exec
+UPDATE payment_requests
+SET stripe_payment_intent_id = $2,
+    status = $3,
+    updated_at = NOW()
+WHERE uuid::text = $1
+`
+
+type UpdatePaymentRequestSuccessParams struct {
+	Uuid                  pgtype.UUID
+	StripePaymentIntentID pgtype.Text
+	Status                string
+}
+
+func (q *Queries) UpdatePaymentRequestSuccess(ctx context.Context, arg UpdatePaymentRequestSuccessParams) error {
+	_, err := q.db.Exec(ctx, updatePaymentRequestSuccess, arg.Uuid, arg.StripePaymentIntentID, arg.Status)
 	return err
 }

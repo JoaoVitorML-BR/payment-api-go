@@ -1,0 +1,3 @@
+-- DEPRECATED: This migration is no longer needed
+-- Removal of payment_attempts columns is handled by payment-consumer service
+-- See: payment-consumer/migrations/008_migrate_to_uuid_pk.sql and related

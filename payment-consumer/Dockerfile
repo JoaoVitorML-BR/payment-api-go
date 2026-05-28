@@ -1,10 +1,16 @@
 FROM golang:1.26-alpine AS builder
 WORKDIR /app
 
-COPY go.mod go.sum ./
+COPY payment-consumer/go.mod payment-consumer/go.sum ./
 RUN go mod download
 
-COPY . .
+COPY payment-consumer/ .
+
+# Sync schema.sql from payment-request-api (centralized source of truth)
+# This ensures payment-consumer uses the same schema as payment-request-api
+COPY payment-request-api/internal/infra/database/sqlc/schema.sql \
+     ./internal/infra/database/sqlc/schema.sql
+
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -o /app/main ./cmd/main.go
 

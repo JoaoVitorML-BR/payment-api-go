@@ -8,8 +8,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type PaymentAttempt struct {
+	ID                    int32
+	PaymentRequestUuid    pgtype.UUID
+	StripePaymentIntentID pgtype.Text
+	StripeClientSecret    pgtype.Text
+	AttemptNumber         int32
+	Currency              string
+	Status                string
+	ErrorCode             pgtype.Text
+	ErrorMessage          pgtype.Text
+	Response              []byte
+	CreatedAt             pgtype.Timestamptz
+	ProcessedAt           pgtype.Timestamptz
+}
+
 type PaymentRequest struct {
-	ID                    int64
+	Uuid                  pgtype.UUID
 	IdempotencyKey        string
 	MerchantReference     pgtype.Text
 	AmountCents           int64

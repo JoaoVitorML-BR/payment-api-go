@@ -11,6 +11,10 @@ func CreatePaymentIntent(sc *Client, amount int64, currency string, idempotencyK
 		Amount:   stripe.Int64(amount),
 		Currency: stripe.String(currency),
 		Metadata: metadata,
+		AutomaticPaymentMethods: &stripe.PaymentIntentCreateAutomaticPaymentMethodsParams{
+			Enabled: stripe.Bool(false),
+		},
+		PaymentMethodTypes: []*string{stripe.String("card")},
 	}
 	if idempotencyKey != "" {
 		params.SetIdempotencyKey(idempotencyKey)
