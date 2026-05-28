@@ -11,17 +11,23 @@ import (
 )
 
 type CreatePaymentResponse struct {
-	ID            int64     `json:"id"`
+	PaymentUUID   string    `json:"payment_uuid"`
 	PaymentMethod string    `json:"payment_method"`
 	Status        string    `json:"status"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
+type PaymentStatusResponse struct {
+	Status       string `json:"status"`
+	ClientSecret string `json:"client_secret"`
+}
+
 type PaymentRepository interface {
 	// ctx is a standard Go context that can be used for cancellation and timeouts.
 	// It allows the caller to signal that the operation should be aborted if it takes too long or if the client disconnects.
 	CreatePaymentRequest(ctx context.Context, req CreatePaymentRequest) (CreatePaymentResponse, error)
+	GetPaymentClientSecret(ctx context.Context, paymentUUID string) (PaymentStatusResponse, error)
 }
 
 type PaymentService struct {
@@ -37,6 +43,10 @@ func NewPaymentService(repo PaymentRepository, publisher events.PaymentRequested
 		return nil, errors.New("nil publisher provided to NewPaymentService")
 	}
 	return &PaymentService{repo: repo, publisher: publisher}, nil
+}
+
+func (s *PaymentService) GetPaymentClientSecret(ctx context.Context, paymentUUID string) (PaymentStatusResponse, error) {
+	return s.repo.GetPaymentClientSecret(ctx, paymentUUID)
 }
 
 func (s *PaymentService) CreatePayment(ctx context.Context, req CreatePaymentRequest) (CreatePaymentResponse, error) {
@@ -106,11 +116,12 @@ func (s *PaymentService) publishPaymentRequestedEvent(req CreatePaymentRequest, 
 	}
 
 	event := events.NewPaymentRequestedEvent(
-		resp.ID,
+		resp.PaymentUUID,
 		req.IdempotencyKey,
 		req.AmountCents,
 		req.Currency,
 		req.PaymentMethod,
+		req.StripePaymentMethodID,
 		req.Installments,
 	)
 
