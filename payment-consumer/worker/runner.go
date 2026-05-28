@@ -39,11 +39,12 @@ func connectRabbitMQ(uri string, maxAttempts int) (*amqp.Connection, error) {
 
 type paymentRequestedMessage struct {
 	EventName      string `json:"event_name"`
-	PaymentID      int64  `json:"payment_id"`
+	PaymentID      string `json:"payment_id"`
 	IdempotencyKey string `json:"idempotency_key"`
 	AmountCents    int64  `json:"amount_cents"`
 	Currency       string `json:"currency"`
 	PaymentMethod  string `json:"payment_method"`
+	StripePaymentMethodID string `json:"stripe_payment_method_id,omitempty"`
 	Installments   *int   `json:"installments,omitempty"`
 	OccurredAt     string `json:"occurred_at"`
 }
