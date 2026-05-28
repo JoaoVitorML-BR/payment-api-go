@@ -35,8 +35,8 @@ services:
 
   payment-request-api:
     build:
-      context: ./payment-request-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./payment-request-api/Dockerfile
     env_file:
       - ./payment-request-api/.env
     ports:
@@ -52,8 +52,8 @@ services:
 
   payment-consumer:
     build:
-      context: ./payment-consumer
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./payment-consumer/Dockerfile
     env_file:
       - ./payment-consumer/.env
     ports:
