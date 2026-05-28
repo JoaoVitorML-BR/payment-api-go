@@ -10,8 +10,9 @@ import (
 
 type PaymentAttempt struct {
 	ID                    int32
-	PaymentRequestID      string
+	PaymentRequestUuid    pgtype.UUID
 	StripePaymentIntentID pgtype.Text
+	StripeClientSecret    pgtype.Text
 	AttemptNumber         int32
 	Currency              string
 	Status                string
@@ -20,4 +21,20 @@ type PaymentAttempt struct {
 	Response              []byte
 	CreatedAt             pgtype.Timestamptz
 	ProcessedAt           pgtype.Timestamptz
+}
+
+type PaymentRequest struct {
+	Uuid                  pgtype.UUID
+	IdempotencyKey        string
+	MerchantReference     pgtype.Text
+	AmountCents           int64
+	Currency              string
+	PaymentMethod         string
+	Installments          pgtype.Int4
+	Status                string
+	FailureCode           pgtype.Text
+	FailureMessage        pgtype.Text
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	StripePaymentIntentID pgtype.Text
 }
