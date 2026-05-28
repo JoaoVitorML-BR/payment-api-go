@@ -14,6 +14,10 @@ func SetupRouter(paymentHandler *handler.PaymentHandler) *gin.Engine {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
+	router.GET("/payment/client-secret/:payment_id", func(c *gin.Context) {
+		paymentHandler.GetPaymentClientSecretHandler(c)
+	})
+
 	router.POST("/payment", func(c *gin.Context) {
 		paymentHandler.CreatePaymentRequestHandler(c)
 	})
