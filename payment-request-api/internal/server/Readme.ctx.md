@@ -17,15 +17,24 @@ Why it exists:
 Current responsibilities:
 
 - `SetupRouter(paymentHandler)` creates the Gin router
-- it registers `/health`
-- it registers `POST /payment`
+- it registers `GET /health` for liveness checks
+- it registers `POST /payment` which routes to `paymentHandler.CreatePaymentRequestHandler()`
 - `Run(cfg, router)` starts the HTTP server on `cfg.Port`
+
+## CreatePayment HTTP Endpoint
+- **Route**: `POST /payment`
+- **Payload**: JSON `CreatePaymentRequest` with idempotency_key, amount_cents, currency, payment_method
+- **Success (201)**: Returns payment ID, method, status, timestamps
+- **Validation Error (400)**: Returns validation error message
+- **Processing Error (500)**: Returns error message
+- **Flow**: HTTP handler → service (validates + persists + publishes) → response
 
 How it relates to other packages:
 
 - `main` loads config and starts the process
-- `bootstrap` assembles repositories, services, and handlers
-- `server` receives already-built handlers and exposes them through HTTP
+- `bootstrap` wires repositories, publishers (RabbitMQ), services, and handlers together
+- `server` receives already-built handlers and exposes CreatePayment operation through HTTP
+- Request flows: HTTP POST /payment → handler (JSON bind) → service (validate + repo.create + publisher.publish) → HTTP 201
 
 What should not happen here:
 
