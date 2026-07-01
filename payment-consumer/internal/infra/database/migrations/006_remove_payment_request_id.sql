@@ -7,4 +7,4 @@ DROP INDEX IF EXISTS payment_attempts_payment_request_id_attempt_number_idx;
 
 -- Drop the old column
 ALTER TABLE payment_attempts 
-DROP COLUMN payment_request_id;
+DROP COLUMN IF EXISTS payment_request_id;
