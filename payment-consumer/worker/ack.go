@@ -1,7 +1,5 @@
 package worker
 
-import "strings"
-
 import amqp "github.com/rabbitmq/amqp091-go"
 
 type deliveryOutcome struct {
@@ -9,6 +7,8 @@ type deliveryOutcome struct {
 	requeue bool
 }
 
+// decideDeliveryOutcome determines whether to acknowledge the message or not based on the error.
+// If the error is nil, it returns an outcome to acknowledge the message.
 func decideDeliveryOutcome(err error) deliveryOutcome {
 	if err == nil {
 		return deliveryOutcome{ack: true}
@@ -21,6 +21,7 @@ func decideDeliveryOutcome(err error) deliveryOutcome {
 	return deliveryOutcome{ack: true}
 }
 
+// ackOrNack acknowledges or negatively acknowledges the message based on the error.
 func ackOrNack(d amqp.Delivery, err error) {
 	outcome := decideDeliveryOutcome(err)
 	if outcome.ack {
@@ -29,8 +30,4 @@ func ackOrNack(d amqp.Delivery, err error) {
 	}
 
 	_ = d.Nack(false, outcome.requeue)
-}
-
-func shouldConfirmPaymentIntent(paymentMethod string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(paymentMethod)), "pm_")
 }
