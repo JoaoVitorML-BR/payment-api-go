@@ -2,6 +2,7 @@ package paymentStripe
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/stripe/stripe-go/v85"
 )
@@ -21,14 +22,21 @@ func CreatePaymentIntent(sc *Client, amount int64, currency string, idempotencyK
 	}
 
 	result, err := sc.stripeClient.V1PaymentIntents.Create(context.Background(), params)
-	return result, err
+	if err != nil {
+		return nil, fmt.Errorf("create payment intent: %w", err)
+	}
+	return result, nil
 }
 
 func ConfirmPaymentIntent(sc *Client, id string, paymentMethodID string) (*stripe.PaymentIntent, error) {
-    params := &stripe.PaymentIntentConfirmParams{
-        PaymentMethod: stripe.String(paymentMethodID),
-    }
+	params := &stripe.PaymentIntentConfirmParams{
+		PaymentMethod: stripe.String(paymentMethodID),
+	}
 
-    result, err := sc.stripeClient.V1PaymentIntents.Confirm(context.Background(), id, params)
-    return result, err
+	result, err := sc.stripeClient.V1PaymentIntents.Confirm(context.Background(), id, params)
+	if err != nil {
+		return nil, fmt.Errorf("confirm payment intent %s: %w", id, err)
+	}
+
+	return result, nil
 }

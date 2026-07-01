@@ -14,7 +14,7 @@ func decideDeliveryOutcome(err error) deliveryOutcome {
 		return deliveryOutcome{ack: true}
 	}
 
-	if isRetryableStripeError(err) {
+	if isRetryableWorkerError(err) {
 		return deliveryOutcome{ack: false, requeue: true}
 	}
 

@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -33,7 +34,11 @@ func (p *PaymentRequestedProcessor) Handle(ctx context.Context, d amqp.Delivery)
 		return err
 	}
 
-	if hasSuccessfulAttempt(ctx, p.queries, msg.PaymentID) {
+	hasAttempt, err := hasSuccessfulAttempt(ctx, p.queries, msg.PaymentID)
+	if err != nil {
+		return fmt.Errorf("check existing successful attempt: %w", err)
+	}
+	if hasAttempt {
 		log.Printf("[INFO] Payment %s already has a successful attempt, skipping creation", msg.PaymentID)
 		return nil
 	}
@@ -43,16 +48,16 @@ func (p *PaymentRequestedProcessor) Handle(ctx context.Context, d amqp.Delivery)
 
 	intent, err := consumerstripe.CreatePaymentIntent(p.stripeClient, msg.AmountCents, currency, msg.IdempotencyKey, metadata)
 	if err != nil {
-		return saveFailedPaymentAttempt(ctx, p.queries, msg.PaymentID, "", currency, err)
+		return saveFailedPaymentAttempt(ctx, p.queries, msg.PaymentID, "", currency, "create_payment_intent", err)
 	}
 
 	intent, err = confirmPaymentIntentIfNeeded(p.stripeClient, intent, msg)
 	if err != nil {
-		return saveFailedPaymentAttempt(ctx, p.queries, msg.PaymentID, intent.ID, currency, err)
+		return saveFailedPaymentAttempt(ctx, p.queries, msg.PaymentID, intent.ID, currency, "confirm_payment_intent", err)
 	}
 
 	if err := saveSuccessfulPaymentAttempt(ctx, p.queries, msg.PaymentID, intent, currency); err != nil {
-		return err
+		return fmt.Errorf("save successful payment attempt: %w", err)
 	}
 
 	return updatePaymentRequestSuccess(ctx, p.queries, msg.PaymentID, intent)
@@ -83,9 +88,13 @@ func confirmPaymentIntentIfNeeded(
 	return consumerstripe.ConfirmPaymentIntent(stripeClient, intent.ID, stripePaymentMethodID)
 }
 
-func hasSuccessfulAttempt(ctx context.Context, queries *bridge.Queries, paymentID string) bool {
+func hasSuccessfulAttempt(ctx context.Context, queries *bridge.Queries, paymentID string) (bool, error) {
 	existingAttempt, err := queries.GetLatestPaymentAttempt(ctx, parseStringToUUID(paymentID))
-	return err == nil && existingAttempt.StripePaymentIntentID.Valid && existingAttempt.Status == "succeeded"
+	if err != nil {
+		return false, err
+	}
+
+	return existingAttempt.StripePaymentIntentID.Valid && existingAttempt.Status == "succeeded", nil
 }
 
 func buildPaymentIntentMetadata(msg paymentRequestedMessage) map[string]string {
@@ -99,9 +108,9 @@ func buildPaymentIntentMetadata(msg paymentRequestedMessage) map[string]string {
 	return metadata
 }
 
-func saveFailedPaymentAttempt(ctx context.Context, queries *bridge.Queries, paymentID string, intentID string, currency string, err error) error {
+func saveFailedPaymentAttempt(ctx context.Context, queries *bridge.Queries, paymentID string, intentID string, currency string, operation string, err error) error {
 	errorCode, errorMessage, errorPayload := stripeErrorPayload(err)
-	log.Printf("[ERROR] Stripe request failed: %s", errorMessage)
+	log.Printf("[ERROR] %s failed: %s", operation, errorMessage)
 
 	stripeIntent := pgtype.Text{}
 	if strings.TrimSpace(intentID) != "" {
@@ -117,10 +126,11 @@ func saveFailedPaymentAttempt(ctx context.Context, queries *bridge.Queries, paym
 		Status:                "failed",
 		ErrorCode:             pgtype.Text{String: errorCode, Valid: errorCode != ""},
 		ErrorMessage:          pgtype.Text{String: errorMessage, Valid: true},
-		Response:              errorPayload,
+		Response:              appendOperationToPayload(operation, errorPayload),
 	})
 	if saveErr != nil {
-		log.Printf("failed to save payment attempt error: %v", saveErr)
+		log.Printf("failed to save payment attempt error for %s: %v", operation, saveErr)
+		return errors.Join(err, fmt.Errorf("save failed payment attempt: %w", saveErr))
 	}
 
 	return err
@@ -160,9 +170,24 @@ func updatePaymentRequestSuccess(ctx context.Context, queries *bridge.Queries, p
 		Status:                string(intent.Status),
 	}); err != nil {
 		log.Printf("[ERROR] UpdatePaymentRequestSuccess failed: %v", err)
-		return err
+		return fmt.Errorf("update payment request success: %w", err)
 	}
 
 	log.Printf("[SUCCESS] Payment %s processed and payment_requests updated successfully", paymentID)
 	return nil
+}
+
+func appendOperationToPayload(operation string, payload []byte) []byte {
+	var data map[string]any
+	if err := json.Unmarshal(payload, &data); err != nil {
+		return payload
+	}
+
+	data["operation"] = operation
+	updatedPayload, err := json.Marshal(data)
+	if err != nil {
+		return payload
+	}
+
+	return updatedPayload
 }
