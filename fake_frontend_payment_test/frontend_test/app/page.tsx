@@ -175,15 +175,15 @@ function StripeCheckoutForm() {
 
       const typedResult = result as CreatePaymentResponse;
       setCreateResponse(typedResult);
-      setStatus(`Payment request criado com id ${typedResult.data.payment_uuid}. Buscando client_secret...`);
+      setStatus(`Payment request criado com id ${typedResult.data.payment_uuid}. Consultando status processado...`);
 
       const paymentDetails = await fetchClientSecret(typedResult.data.payment_uuid);
       if (paymentDetails) {
         setClientSecret(paymentDetails.client_secret);
         setPaymentDetails(paymentDetails);
-        setStatus(`client_secret disponível. Status final da Stripe: ${paymentDetails.status}.`);
+        setStatus(`Pagamento processado com status final ${paymentDetails.status}.`);
       } else {
-        setStatus("Payment request criado, mas o client_secret ainda não ficou disponível.");
+        setStatus("Payment request criado, mas o status processado ainda não ficou disponível.");
       }
 
       setForm((current) => ({
@@ -422,13 +422,20 @@ function StripeCheckoutForm() {
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h2 className="text-2xl font-semibold text-white">Resposta do backend</h2>
-                  <p className="mt-1 text-sm text-slate-400">O payment request criado pelo backend aparece aqui.</p>
+                  <p className="mt-1 text-sm text-slate-400">A resposta inicial do POST e o status final processado aparecem aqui.</p>
                 </div>
-                {createResponse ? (
-                  <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
-                    {paymentDetails?.status ?? createResponse.data.status}
-                  </span>
-                ) : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  {createResponse ? (
+                    <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-xs font-medium text-sky-200">
+                      pedido aceito
+                    </span>
+                  ) : null}
+                  {paymentDetails ? (
+                    <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
+                      pagamento {paymentDetails.status}
+                    </span>
+                  ) : null}
+                </div>
               </div>
 
               <div className="mt-5 grid gap-4 sm:grid-cols-3">
@@ -453,9 +460,16 @@ function StripeCheckoutForm() {
               </div>
 
               <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">JSON response</p>
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Resposta inicial do POST</p>
                 <pre className="mt-3 overflow-auto text-xs leading-6 text-slate-300">
                   {createResponse ? JSON.stringify(createResponse, null, 2) : emptyResponseMessage()}
+                </pre>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Status final processado</p>
+                <pre className="mt-3 overflow-auto text-xs leading-6 text-slate-300">
+                  {paymentDetails ? JSON.stringify(paymentDetails, null, 2) : "Aguardando a confirmação da rota /payment/client-secret/[paymentId]."}
                 </pre>
               </div>
             </section>
