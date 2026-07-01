@@ -38,15 +38,15 @@ func connectRabbitMQ(uri string, maxAttempts int) (*amqp.Connection, error) {
 }
 
 type paymentRequestedMessage struct {
-	EventName      string `json:"event_name"`
-	PaymentID      string `json:"payment_id"`
-	IdempotencyKey string `json:"idempotency_key"`
-	AmountCents    int64  `json:"amount_cents"`
-	Currency       string `json:"currency"`
-	PaymentMethod  string `json:"payment_method"`
+	EventName             string `json:"event_name"`
+	PaymentID             string `json:"payment_id"`
+	IdempotencyKey        string `json:"idempotency_key"`
+	AmountCents           int64  `json:"amount_cents"`
+	Currency              string `json:"currency"`
+	PaymentMethod         string `json:"payment_method"`
 	StripePaymentMethodID string `json:"stripe_payment_method_id,omitempty"`
-	Installments   *int   `json:"installments,omitempty"`
-	OccurredAt     string `json:"occurred_at"`
+	Installments          *int   `json:"installments,omitempty"`
+	OccurredAt            string `json:"occurred_at"`
 }
 
 func StartWorker(ctx context.Context, pool *pgxpool.Pool, stripeClient *consumerstripe.Client, cfg *config.Config) {
@@ -88,13 +88,14 @@ func StartWorker(ctx context.Context, pool *pgxpool.Pool, stripeClient *consumer
 	fmt.Println("message from channel consumer: ", msgs)
 
 	queries := bridge.New(pool)
+	processor := NewPaymentRequestedProcessor(queries, stripeClient)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		for d := range msgs {
 			log.Printf("Received a message: %s", d.Body)
-			err := handlePaymentRequested(context.Background(), queries, stripeClient, d)
+			err := processor.Handle(context.Background(), d)
 			if err != nil {
 				log.Printf("failed to handle payment requested message: %v", err)
 			}
