@@ -15,11 +15,21 @@ BEGIN
 END $$;
 
 -- Add Foreign Key Constraint
-ALTER TABLE payment_attempts
-ADD CONSTRAINT fk_payment_attempts_payment_requests
-  FOREIGN KEY (payment_request_uuid) 
-  REFERENCES payment_requests(uuid) 
-  ON DELETE RESTRICT
-  ON UPDATE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+                SELECT 1
+                FROM information_schema.table_constraints
+                WHERE table_name = 'payment_attempts'
+                    AND constraint_name = 'fk_payment_attempts_payment_requests'
+        ) THEN
+                ALTER TABLE payment_attempts
+                ADD CONSTRAINT fk_payment_attempts_payment_requests
+                    FOREIGN KEY (payment_request_uuid)
+                    REFERENCES payment_requests(uuid)
+                    ON DELETE RESTRICT
+                    ON UPDATE CASCADE;
+        END IF;
+END $$;
 
 COMMIT;

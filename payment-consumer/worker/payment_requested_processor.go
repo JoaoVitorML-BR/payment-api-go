@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -14,54 +15,47 @@ import (
 	"github.com/stripe/stripe-go/v85"
 )
 
-func resolveStripePaymentMethodID(msg paymentRequestedMessage) string {
-	if trimmed := strings.TrimSpace(msg.StripePaymentMethodID); trimmed != "" {
-		return trimmed
-	}
+type PaymentRequestedProcessor struct {
+	queries      *bridge.Queries
+	stripeClient *consumerstripe.Client
+}
 
-	switch strings.ToLower(strings.TrimSpace(msg.PaymentMethod)) {
-	case "credit", "debit":
-		return "pm_card_visa"
-	default:
-		return ""
+func NewPaymentRequestedProcessor(queries *bridge.Queries, stripeClient *consumerstripe.Client) *PaymentRequestedProcessor {
+	return &PaymentRequestedProcessor{
+		queries:      queries,
+		stripeClient: stripeClient,
 	}
 }
 
-func handlePaymentRequested(ctx context.Context, queries *bridge.Queries, stripeClient *consumerstripe.Client, d amqp.Delivery) error {
+func (p *PaymentRequestedProcessor) Handle(ctx context.Context, d amqp.Delivery) error {
 	msg, err := parsePaymentRequestedMessage(d.Body)
 	if err != nil {
 		return err
 	}
 
-	if hasSuccessfulAttempt(ctx, queries, msg.PaymentID) {
+	if hasSuccessfulAttempt(ctx, p.queries, msg.PaymentID) {
 		log.Printf("[INFO] Payment %s already has a successful attempt, skipping creation", msg.PaymentID)
 		return nil
 	}
 
 	currency := strings.ToLower(msg.Currency)
 	metadata := buildPaymentIntentMetadata(msg)
-	stripePaymentMethodID := resolveStripePaymentMethodID(msg)
 
-	intent, err := consumerstripe.CreatePaymentIntent(stripeClient, msg.AmountCents, currency, msg.IdempotencyKey, metadata)
+	intent, err := consumerstripe.CreatePaymentIntent(p.stripeClient, msg.AmountCents, currency, msg.IdempotencyKey, metadata)
 	if err != nil {
-		return saveFailedPaymentAttempt(ctx, queries, msg.PaymentID, "", currency, err)
+		return saveFailedPaymentAttempt(ctx, p.queries, msg.PaymentID, "", currency, err)
 	}
 
-	if stripePaymentMethodID != "" {
-		confirmedIntent, err := consumerstripe.ConfirmPaymentIntent(stripeClient, intent.ID, stripePaymentMethodID)
-		if err != nil {
-			return saveFailedPaymentAttempt(ctx, queries, msg.PaymentID, intent.ID, currency, err)
-		}
-		intent = confirmedIntent
-	} else if strings.TrimSpace(msg.PaymentMethod) != "" {
-		log.Printf("skipping Stripe confirmation because no Stripe payment method id was provided for payment_method=%q", msg.PaymentMethod)
+	intent, err = confirmPaymentIntentIfNeeded(p.stripeClient, intent, msg)
+	if err != nil {
+		return saveFailedPaymentAttempt(ctx, p.queries, msg.PaymentID, intent.ID, currency, err)
 	}
 
-	if err := saveSuccessfulPaymentAttempt(ctx, queries, msg.PaymentID, intent, currency); err != nil {
+	if err := saveSuccessfulPaymentAttempt(ctx, p.queries, msg.PaymentID, intent, currency); err != nil {
 		return err
 	}
 
-	return updatePaymentRequestSuccess(ctx, queries, msg.PaymentID, intent)
+	return updatePaymentRequestSuccess(ctx, p.queries, msg.PaymentID, intent)
 }
 
 func parsePaymentRequestedMessage(body []byte) (paymentRequestedMessage, error) {
@@ -72,11 +66,27 @@ func parsePaymentRequestedMessage(body []byte) (paymentRequestedMessage, error) 
 	return msg, nil
 }
 
+func confirmPaymentIntentIfNeeded(
+	stripeClient *consumerstripe.Client,
+	intent *stripe.PaymentIntent,
+	msg paymentRequestedMessage,
+) (*stripe.PaymentIntent, error) {
+	if strings.ToLower(strings.TrimSpace(msg.PaymentMethod)) != "credit" {
+		return intent, nil
+	}
+
+	stripePaymentMethodID := strings.TrimSpace(msg.StripePaymentMethodID)
+	if stripePaymentMethodID == "" {
+		return nil, fmt.Errorf("missing stripe_payment_method_id for credit payment")
+	}
+
+	return consumerstripe.ConfirmPaymentIntent(stripeClient, intent.ID, stripePaymentMethodID)
+}
 
 func hasSuccessfulAttempt(ctx context.Context, queries *bridge.Queries, paymentID string) bool {
 	existingAttempt, err := queries.GetLatestPaymentAttempt(ctx, parseStringToUUID(paymentID))
 	return err == nil && existingAttempt.StripePaymentIntentID.Valid && existingAttempt.Status == "succeeded"
-	}
+}
 
 func buildPaymentIntentMetadata(msg paymentRequestedMessage) map[string]string {
 	metadata := map[string]string{
@@ -88,7 +98,6 @@ func buildPaymentIntentMetadata(msg paymentRequestedMessage) map[string]string {
 	}
 	return metadata
 }
-
 
 func saveFailedPaymentAttempt(ctx context.Context, queries *bridge.Queries, paymentID string, intentID string, currency string, err error) error {
 	errorCode, errorMessage, errorPayload := stripeErrorPayload(err)
@@ -115,7 +124,7 @@ func saveFailedPaymentAttempt(ctx context.Context, queries *bridge.Queries, paym
 	}
 
 	return err
-	}
+}
 
 func saveSuccessfulPaymentAttempt(ctx context.Context, queries *bridge.Queries, paymentID string, intent *stripe.PaymentIntent, currency string) error {
 	responseBody, _ := json.Marshal(map[string]any{
@@ -141,8 +150,7 @@ func saveSuccessfulPaymentAttempt(ctx context.Context, queries *bridge.Queries, 
 		return err
 	}
 	return nil
-	}
-
+}
 
 func updatePaymentRequestSuccess(ctx context.Context, queries *bridge.Queries, paymentID string, intent *stripe.PaymentIntent) error {
 	parsedUUID := parseStringToUUID(paymentID)
