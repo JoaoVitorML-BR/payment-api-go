@@ -90,6 +90,10 @@ func (s *PaymentService) validateCreatePaymentRequest(req CreatePaymentRequest) 
 		return errors.New("payment_method must be one of: credit, debit, pix, boleto")
 	}
 
+	if req.Installments != nil && paymentMethod != "credit" {
+		return errors.New("installments are only allowed for credit payments")
+	}
+
 	switch paymentMethod {
 	case "credit":
 		return s.validateCreditPayment(req)
