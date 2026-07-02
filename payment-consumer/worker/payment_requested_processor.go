@@ -11,6 +11,7 @@ import (
 
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/database/bridge"
 	consumerstripe "github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/paymentStripe"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/stripe/stripe-go/v85"
@@ -91,6 +92,9 @@ func confirmPaymentIntentIfNeeded(
 func hasSuccessfulAttempt(ctx context.Context, queries *bridge.Queries, paymentID string) (bool, error) {
 	existingAttempt, err := queries.GetLatestPaymentAttempt(ctx, parseStringToUUID(paymentID))
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
 		return false, err
 	}
 
