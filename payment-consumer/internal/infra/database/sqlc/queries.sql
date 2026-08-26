@@ -1,21 +1,43 @@
 -- name: UpdatePaymentAttempt :exec
-INSERT INTO payment_attempts (payment_request_uuid, stripe_payment_intent_id, stripe_client_secret, attempt_number, currency, status, error_code, error_message, response, processed_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+INSERT INTO payment_attempts (
+    payment_request_uuid,
+    stripe_payment_intent_id,
+    stripe_client_secret,
+    gateway,
+    gateway_payment_id,
+    pix_qr_code,
+    pix_qr_code_base64,
+    pix_expiration_at,
+    attempt_number,
+    currency,
+    status,
+    error_code,
+    error_message,
+    response,
+    processed_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
 ON CONFLICT (payment_request_uuid, attempt_number) DO UPDATE SET
   stripe_payment_intent_id = EXCLUDED.stripe_payment_intent_id,
-  stripe_client_secret = EXCLUDED.stripe_client_secret,
-  currency = EXCLUDED.currency,
-  status = EXCLUDED.status,
-  error_code = EXCLUDED.error_code,
-  error_message = EXCLUDED.error_message,
-  response = EXCLUDED.response,
-  processed_at = NOW();
+  stripe_client_secret     = EXCLUDED.stripe_client_secret,
+  gateway                  = EXCLUDED.gateway,
+  gateway_payment_id       = EXCLUDED.gateway_payment_id,
+  pix_qr_code             = EXCLUDED.pix_qr_code,
+  pix_qr_code_base64      = EXCLUDED.pix_qr_code_base64,
+  pix_expiration_at        = EXCLUDED.pix_expiration_at,
+  currency                 = EXCLUDED.currency,
+  status                   = EXCLUDED.status,
+  error_code               = EXCLUDED.error_code,
+  error_message            = EXCLUDED.error_message,
+  response                 = EXCLUDED.response,
+  processed_at             = NOW();
 
 -- name: UpdatePaymentRequestSuccess :exec
 UPDATE payment_requests
-SET stripe_payment_intent_id = $2,
-    status = $3,
-    updated_at = NOW()
+SET gateway            = $2,
+    gateway_payment_id = $3,
+    status             = $4,
+    updated_at         = NOW()
 WHERE uuid::text = $1;
 
 -- name: UpdatePaymentRequestError :exec
@@ -27,7 +49,9 @@ SET status = $2,
 WHERE uuid::text = $1;
 
 -- name: GetLatestPaymentAttempt :one
-SELECT payment_request_uuid, stripe_payment_intent_id, stripe_client_secret, attempt_number, currency, status, error_code, error_message, response, created_at, processed_at
+SELECT payment_request_uuid, stripe_payment_intent_id, stripe_client_secret,
+       gateway, gateway_payment_id, pix_qr_code, pix_qr_code_base64, pix_expiration_at,
+       attempt_number, currency, status, error_code, error_message, response, created_at, processed_at
 FROM payment_attempts
 WHERE payment_request_uuid = $1
 ORDER BY attempt_number DESC

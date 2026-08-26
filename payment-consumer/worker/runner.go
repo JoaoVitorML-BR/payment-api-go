@@ -1,3 +1,4 @@
+// payment-consumer\worker\runner.go
 package worker
 
 import (
@@ -9,7 +10,7 @@ import (
 
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/config"
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/database/bridge"
-	consumerstripe "github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/paymentStripe"
+	"github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/paymentgateway"
 	"github.com/jackc/pgx/v5/pgxpool"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -37,19 +38,29 @@ func connectRabbitMQ(uri string, maxAttempts int) (*amqp.Connection, error) {
 	return nil, err
 }
 
-type paymentRequestedMessage struct {
-	EventName             string `json:"event_name"`
-	PaymentID             string `json:"payment_id"`
-	IdempotencyKey        string `json:"idempotency_key"`
-	AmountCents           int64  `json:"amount_cents"`
-	Currency              string `json:"currency"`
-	PaymentMethod         string `json:"payment_method"`
-	StripePaymentMethodID string `json:"stripe_payment_method_id,omitempty"`
-	Installments          *int   `json:"installments,omitempty"`
-	OccurredAt            string `json:"occurred_at"`
+type CustomerInfo struct {
+	Name       string `json:"name"`
+	Email      string `json:"email"`
+	TaxID      string `json:"tax_id"` // CPF or CNPJ
+	Address    string `json:"address"`
+	City       string `json:"city"`
+	State      string `json:"state"`
+	PostalCode string `json:"postal_code"`
 }
 
-func StartWorker(ctx context.Context, pool *pgxpool.Pool, stripeClient *consumerstripe.Client, cfg *config.Config) {
+type paymentRequestedMessage struct {
+	EventName      string        `json:"event_name"`
+	PaymentID      string        `json:"payment_id"`
+	IdempotencyKey string        `json:"idempotency_key"`
+	AmountCents    int64         `json:"amount_cents"`
+	Currency       string        `json:"currency"`
+	PaymentMethod  string        `json:"payment_method"`
+	Customer       *CustomerInfo `json:"customer,omitempty"`
+	Installments   *int          `json:"installments,omitempty"`
+	OccurredAt     string        `json:"occurred_at"`
+}
+
+func StartWorker(ctx context.Context, pool *pgxpool.Pool, gateway paymentgateway.Gateway, cfg *config.Config) {
 	conn, err := connectRabbitMQ(cfg.RabbitmqURI, 10)
 	failOnError(err, "Failed to connect to RabbitMQ")
 	defer conn.Close()
@@ -88,7 +99,7 @@ func StartWorker(ctx context.Context, pool *pgxpool.Pool, stripeClient *consumer
 	fmt.Println("message from channel consumer: ", msgs)
 
 	queries := bridge.New(pool)
-	processor := NewPaymentRequestedProcessor(queries, stripeClient)
+	processor := NewPaymentRequestedProcessor(queries, gateway, cfg)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
