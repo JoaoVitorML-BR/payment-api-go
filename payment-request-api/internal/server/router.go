@@ -1,3 +1,4 @@
+// payment-request-api\internal\server\router.go
 package server
 
 import (
@@ -20,6 +21,14 @@ func SetupRouter(paymentHandler *handler.PaymentHandler) *gin.Engine {
 
 	router.POST("/payment", func(c *gin.Context) {
 		paymentHandler.CreatePaymentRequestHandler(c)
+	})
+
+	router.POST("/webhook/mercadopago", func(c *gin.Context) {
+		paymentHandler.MercadoPagoWebhookHandler(c)
+	})
+
+	router.POST("/payment/refund", func(c *gin.Context) {
+		paymentHandler.RefundHandler(c)
 	})
 
 	return router
