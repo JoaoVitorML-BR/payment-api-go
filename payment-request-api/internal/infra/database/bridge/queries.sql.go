@@ -21,9 +21,11 @@ INSERT INTO payment_requests (
     status,
     failure_code,
     failure_message,
-    stripe_payment_intent_id
+    stripe_payment_intent_id,
+    gateway,
+    gateway_payment_id
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 )
 ON CONFLICT (idempotency_key) DO NOTHING
 RETURNING uuid::text AS uuid, payment_method, status, created_at, updated_at
@@ -39,6 +41,8 @@ type CreatePaymentRequestParams struct {
 	FailureCode           pgtype.Text
 	FailureMessage        pgtype.Text
 	StripePaymentIntentID pgtype.Text
+	Gateway               string
+	GatewayPaymentID      pgtype.Text
 }
 
 type CreatePaymentRequestRow struct {
@@ -60,6 +64,8 @@ func (q *Queries) CreatePaymentRequest(ctx context.Context, arg CreatePaymentReq
 		arg.FailureCode,
 		arg.FailureMessage,
 		arg.StripePaymentIntentID,
+		arg.Gateway,
+		arg.GatewayPaymentID,
 	)
 	var i CreatePaymentRequestRow
 	err := row.Scan(
@@ -73,18 +79,36 @@ func (q *Queries) CreatePaymentRequest(ctx context.Context, arg CreatePaymentReq
 }
 
 const getPaymentClientSecret = `-- name: GetPaymentClientSecret :one
-SELECT stripe_client_secret
+SELECT status, stripe_client_secret, gateway, gateway_payment_id, pix_qr_code, pix_qr_code_base64, pix_expiration_at
 FROM payment_attempts
 WHERE payment_request_uuid::text = $1
 ORDER BY attempt_number DESC
 LIMIT 1
 `
 
-func (q *Queries) GetPaymentClientSecret(ctx context.Context, paymentRequestUuid pgtype.UUID) (pgtype.Text, error) {
+type GetPaymentClientSecretRow struct {
+	Status             string
+	StripeClientSecret pgtype.Text
+	Gateway            string
+	GatewayPaymentID   pgtype.Text
+	PixQrCode          pgtype.Text
+	PixQrCodeBase64    pgtype.Text
+	PixExpirationAt    pgtype.Timestamptz
+}
+
+func (q *Queries) GetPaymentClientSecret(ctx context.Context, paymentRequestUuid pgtype.UUID) (GetPaymentClientSecretRow, error) {
 	row := q.db.QueryRow(ctx, getPaymentClientSecret, paymentRequestUuid)
-	var stripe_client_secret pgtype.Text
-	err := row.Scan(&stripe_client_secret)
-	return stripe_client_secret, err
+	var i GetPaymentClientSecretRow
+	err := row.Scan(
+		&i.Status,
+		&i.StripeClientSecret,
+		&i.Gateway,
+		&i.GatewayPaymentID,
+		&i.PixQrCode,
+		&i.PixQrCodeBase64,
+		&i.PixExpirationAt,
+	)
+	return i, err
 }
 
 const getPaymentRequestByIdempotencyKey = `-- name: GetPaymentRequestByIdempotencyKey :one
@@ -127,29 +151,19 @@ func (q *Queries) GetPaymentRequestStripePaymentIntentID(ctx context.Context, uu
 	return stripe_payment_intent_id, err
 }
 
-const getPaymentStatusAndClientSecret = `-- name: GetPaymentStatusAndClientSecret :one
-SELECT
-    pr.status,
-    COALESCE(pa.stripe_client_secret, '') AS stripe_client_secret
-FROM payment_requests pr
-LEFT JOIN LATERAL (
-    SELECT stripe_client_secret
-    FROM payment_attempts
-    WHERE payment_request_uuid = pr.uuid
-    ORDER BY attempt_number DESC
-    LIMIT 1
-) pa ON true
-WHERE pr.uuid::text = $1
+const updatePaymentStatus = `-- name: UpdatePaymentStatus :exec
+UPDATE payment_requests
+SET status = $1, amount_cents = $2
+WHERE uuid = $3::uuid
 `
 
-type GetPaymentStatusAndClientSecretRow struct {
-	Status             string
-	StripeClientSecret string
+type UpdatePaymentStatusParams struct {
+	Status      string
+	AmountCents int64
+	Uuid        pgtype.UUID
 }
 
-func (q *Queries) GetPaymentStatusAndClientSecret(ctx context.Context, uuid pgtype.UUID) (GetPaymentStatusAndClientSecretRow, error) {
-	row := q.db.QueryRow(ctx, getPaymentStatusAndClientSecret, uuid)
-	var i GetPaymentStatusAndClientSecretRow
-	err := row.Scan(&i.Status, &i.StripeClientSecret)
-	return i, err
+func (q *Queries) UpdatePaymentStatus(ctx context.Context, arg UpdatePaymentStatusParams) error {
+	_, err := q.db.Exec(ctx, updatePaymentStatus, arg.Status, arg.AmountCents, arg.Uuid)
+	return err
 }

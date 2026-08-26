@@ -13,6 +13,11 @@ type PaymentAttempt struct {
 	PaymentRequestUuid    pgtype.UUID
 	StripePaymentIntentID pgtype.Text
 	StripeClientSecret    pgtype.Text
+	Gateway               string
+	GatewayPaymentID      pgtype.Text
+	PixQrCode             pgtype.Text
+	PixQrCodeBase64       pgtype.Text
+	PixExpirationAt       pgtype.Timestamptz
 	AttemptNumber         int32
 	Currency              string
 	Status                string
@@ -37,4 +42,6 @@ type PaymentRequest struct {
 	CreatedAt             pgtype.Timestamptz
 	UpdatedAt             pgtype.Timestamptz
 	StripePaymentIntentID pgtype.Text
+	Gateway               string
+	GatewayPaymentID      pgtype.Text
 }
