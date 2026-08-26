@@ -1,3 +1,4 @@
+// payment-consumer\cmd\main.go
 package main
 
 import (
@@ -30,5 +31,5 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	worker.StartWorker(ctx, deps.Pool, deps.StripeClient, cfg)
+	worker.StartWorker(ctx, deps.Pool, deps.Gateway, cfg)
 }

@@ -13,7 +13,9 @@ CREATE TABLE IF NOT EXISTS payment_requests (
     failure_message TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    stripe_payment_intent_id VARCHAR(255) UNIQUE
+    stripe_payment_intent_id VARCHAR(255) UNIQUE,
+    gateway VARCHAR(30) NOT NULL DEFAULT 'mercado_pago',
+    gateway_payment_id VARCHAR(255) UNIQUE
 );
 
 CREATE TABLE IF NOT EXISTS payment_attempts (
@@ -21,6 +23,11 @@ CREATE TABLE IF NOT EXISTS payment_attempts (
     payment_request_uuid UUID NOT NULL,
     stripe_payment_intent_id VARCHAR(255),
     stripe_client_secret VARCHAR(255),
+    gateway VARCHAR(30) NOT NULL DEFAULT 'mercado_pago',
+    gateway_payment_id VARCHAR(255),
+    pix_qr_code TEXT,
+    pix_qr_code_base64 TEXT,
+    pix_expiration_at TIMESTAMPTZ,
     attempt_number INTEGER NOT NULL DEFAULT 1,
     currency CHAR(3) NOT NULL,
     status VARCHAR(50) NOT NULL,

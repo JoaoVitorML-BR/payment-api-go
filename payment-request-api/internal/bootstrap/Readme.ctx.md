@@ -26,9 +26,11 @@ Current implementation details:
 
 - `NewRouter(cfg *config.Config)` is the bootstrap entry point
 - it reads `RABBITMQ_URL` and `RABBITMQ_QUEUE` from environment
+- it reads `MERCADO_PAGO_ACCESS_TOKEN` from environment (required for webhook validation)
 - it creates `publisher := rabbitmq.NewRabbitMQPaymentRequestedEventPublisher(rabbitmqURI, "payment.events", rabbitmqQueue, "payment.requested.v1")`
 - it creates `paymentRepository := handler.NewPaymentRepositoryDB(cfg.Pool)`
-- it creates `paymentService := handler.NewPaymentService(paymentRepository, publisher)` ← both repo AND publisher injected
+- it creates `gatewayReader := paymentmercadopago.NewGatewayReader(mpAccessToken)` for re-querying payments on webhook
+- it creates `paymentService := handler.NewPaymentService(paymentRepository, publisher, gatewayReader)` ← repo, publisher, AND gatewayReader injected
 - it creates `paymentHandler := handler.NewPaymentHandler(paymentService)`
 - it delegates route registration to `server.SetupRouter(paymentHandler)`
 
@@ -40,5 +42,6 @@ Important constraints for future AI or maintainers:
 - do not make the router build repositories or services again
 - keep this package focused on wiring dependencies only
 - **CRITICAL**: service MUST receive BOTH publisher and repository, so events publish after DB commit
+- **CRITICAL**: service MUST receive gatewayReader (MercadoPagoGatewayReader) to verify webhook notifications against the authoritative Mercado Pago API
 
 In short: bootstrap exists so the rest of the codebase can stay clean. It is the single place where the application is assembled before the HTTP server starts.

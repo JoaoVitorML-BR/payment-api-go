@@ -1,3 +1,4 @@
+// payment-consumer\internal\bootstrap\bootstrap.go
 package bootstrap
 
 import (
@@ -5,13 +6,14 @@ import (
 
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/config"
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/database/bridge"
-	consumerstripe "github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/paymentStripe"
+	consumermercadopago "github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/paymentMercadoPago"
+	"github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/paymentgateway"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Dependencies struct {
-	Pool        *pgxpool.Pool
-	StripeClient *consumerstripe.Client
+	Pool    *pgxpool.Pool
+	Gateway paymentgateway.Gateway
 }
 
 func Bootstrap(cfg *config.Config) (*Dependencies, error) {
@@ -21,9 +23,14 @@ func Bootstrap(cfg *config.Config) (*Dependencies, error) {
 		return nil, err
 	}
 
+	gateway, err := consumermercadopago.NewClient(cfg.MercadoPagoAccessToken)
+	if err != nil {
+		return nil, err
+	}
+
 	deps := &Dependencies{
-		Pool:        pool,
-		StripeClient: consumerstripe.NewClient(cfg.StripeAPIKey),
+		Pool:    pool,
+		Gateway: gateway,
 	}
 
 	return deps, nil

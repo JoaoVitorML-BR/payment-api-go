@@ -1,3 +1,4 @@
+// payment-request-api\internal\infra\messaging\rabbitmq\payment_requested_event_publisher.go
 package rabbitmq
 
 import (

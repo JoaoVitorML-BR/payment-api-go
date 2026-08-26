@@ -1,10 +1,14 @@
+// payment-request-api\internal\bootstrap\bootstrap.go
 package bootstrap
 
 import (
+	"log"
 	"os"
+	"strings"
 
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/config"
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/infra/messaging/rabbitmq"
+	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/infra/paymentmercadopago"
 	handler "github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/payment"
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/server"
 	"github.com/gin-gonic/gin"
@@ -34,7 +38,14 @@ func NewRouter(cfg *config.Config) *gin.Engine {
 	if err != nil {
 		panic("Failed to initialize payment repository")
 	}
-	paymentService, err := handler.NewPaymentService(paymentRepository, publisher)
+
+	mpAccessToken := strings.TrimSpace(os.Getenv("MERCADO_PAGO_ACCESS_TOKEN"))
+	if mpAccessToken == "" {
+		log.Fatal("MERCADO_PAGO_ACCESS_TOKEN is required for webhook validation")
+	}
+	gatewayReader := paymentmercadopago.NewGatewayReader(mpAccessToken)
+
+	paymentService, err := handler.NewPaymentService(paymentRepository, publisher, gatewayReader)
 	if err != nil {
 		panic("Failed to initialize payment service")
 	}
