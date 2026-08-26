@@ -1,9 +1,12 @@
+// payment-request-api\internal\payment\repository.go
 package payment
 
 import (
 	"context"
 	"errors"
 	"log"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -16,6 +19,22 @@ type PaymentRepositoryDB struct {
 	queries *dbbridge.Queries
 }
 
+func (r *PaymentRepositoryDB) UpdatePaymentStatus(ctx context.Context, paymentUUID string, status string, amountCents int64) error {
+	parsedUUID := parseStringToUUID(paymentUUID)
+
+	params := dbbridge.UpdatePaymentStatusParams{
+		Status:      status,
+		AmountCents: amountCents,
+		Uuid:        parsedUUID,
+	}
+
+	err := r.queries.UpdatePaymentStatus(ctx, params)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func NewPaymentRepositoryDB(pool *pgxpool.Pool) (*PaymentRepositoryDB, error) {
 	if pool == nil {
 		return nil, errors.New("nil db pool")
@@ -24,16 +43,66 @@ func NewPaymentRepositoryDB(pool *pgxpool.Pool) (*PaymentRepositoryDB, error) {
 }
 
 func (r *PaymentRepositoryDB) GetPaymentClientSecret(ctx context.Context, paymentUUID string) (PaymentStatusResponse, error) {
-	row, err := r.queries.GetPaymentStatusAndClientSecret(ctx, parseStringToUUID(paymentUUID))
+	parsedUUID := parseStringToUUID(paymentUUID)
+
+	row, err := r.queries.GetPaymentClientSecret(ctx, parsedUUID)
 	log.Printf("Fetching payment status for payment: %s, result: %v", paymentUUID, row)
 	if err != nil {
 		return PaymentStatusResponse{}, err
 	}
 
+	var expirationAt *time.Time
+	if row.PixExpirationAt.Valid {
+		exp := row.PixExpirationAt.Time
+		expirationAt = &exp
+	}
+
 	return PaymentStatusResponse{
-		Status:       row.Status,
-		ClientSecret: row.StripeClientSecret,
+		Status:           row.Status,
+		ClientSecret:     row.StripeClientSecret.String,
+		Gateway:          row.Gateway,
+		GatewayPaymentID: row.GatewayPaymentID.String,
+		PixQRCode:        row.PixQrCode.String,
+		PixQRCodeBase64:  row.PixQrCodeBase64.String,
+		PixExpirationAt:  expirationAt,
 	}, nil
+}
+
+func (r *PaymentRepositoryDB) GetPaymentRequestByGatewayPaymentID(ctx context.Context, gatewayPaymentID string) (PaymentGatewayValidationData, error) {
+	row, err := r.queries.GetPaymentRequestByGatewayPaymentID(ctx, strings.TrimSpace(gatewayPaymentID))
+	if err != nil {
+		return PaymentGatewayValidationData{}, err
+	}
+
+	return PaymentGatewayValidationData{
+		PaymentUUID:      row.Uuid,
+		ExpectedAmount:   row.AmountCents,
+		ExpectedCurrency: row.Currency,
+		CurrentStatus:    row.Status,
+	}, nil
+}
+
+func (r *PaymentRepositoryDB) UpdatePaymentStatusByGatewayPaymentID(
+	ctx context.Context,
+	gatewayPaymentID string,
+	status string,
+) (int64, error) {
+
+	params := dbbridge.UpdatePaymentStatusByGatewayPaymentIDParams{
+		Status:           status,
+		GatewayPaymentID: strings.TrimSpace(gatewayPaymentID),
+	}
+
+	rowsAffected, err := r.queries.UpdatePaymentStatusByGatewayPaymentID(
+		ctx,
+		&params,
+	)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return rowsAffected, nil
 }
 
 func (r *PaymentRepositoryDB) CreatePaymentRequest(ctx context.Context, req CreatePaymentRequest) (CreatePaymentResponse, error) {
@@ -53,6 +122,8 @@ func (r *PaymentRepositoryDB) CreatePaymentRequest(ctx context.Context, req Crea
 		FailureCode:           pgtype.Text{Valid: false},
 		FailureMessage:        pgtype.Text{Valid: false},
 		StripePaymentIntentID: pgtype.Text{Valid: false},
+		Gateway:               "mercado_pago",
+		GatewayPaymentID:      pgtype.Text{Valid: false},
 	}
 
 	row, err := r.queries.CreatePaymentRequest(ctx, params)
