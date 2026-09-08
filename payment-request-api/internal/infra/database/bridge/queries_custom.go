@@ -3,6 +3,7 @@ package bridge
 
 import (
 	"context"
+	"time"
 )
 
 const getPaymentRequestByGatewayPaymentID = `-- name: GetPaymentRequestByGatewayPaymentID :one
@@ -62,4 +63,45 @@ func (q *Queries) UpdatePaymentStatusByGatewayPaymentID(
     }
 
     return result.RowsAffected(), nil
+}
+
+const getPendingPaymentsForReconciliation = `-- name: GetPendingPaymentsForReconciliation :many
+SELECT gateway_payment_id, uuid::text AS uuid
+FROM payment_requests
+WHERE status = 'pending'
+  AND gateway_payment_id IS NOT NULL
+  AND gateway_payment_id != ''
+  AND updated_at <= $1
+ORDER BY updated_at ASC
+LIMIT $2
+`
+
+type GetPendingPaymentsForReconciliationRow struct {
+	GatewayPaymentID string
+	Uuid             string
+}
+
+func (q *Queries) GetPendingPaymentsForReconciliation(ctx context.Context, maxUpdatedAt time.Time, limit int32) ([]GetPendingPaymentsForReconciliationRow, error) {
+	rows, err := q.db.Query(ctx, getPendingPaymentsForReconciliation, maxUpdatedAt, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []GetPendingPaymentsForReconciliationRow
+	for rows.Next() {
+		var i GetPendingPaymentsForReconciliationRow
+		var gwID *string
+		if err := rows.Scan(&gwID, &i.Uuid); err != nil {
+			return nil, err
+		}
+		if gwID != nil {
+			i.GatewayPaymentID = *gwID
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
