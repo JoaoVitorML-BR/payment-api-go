@@ -10,12 +10,14 @@ import (
 
 	"encoding/json"
 
+	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/config"
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/infra/webhook"
 	"github.com/gin-gonic/gin"
 )
 
 type PaymentHandler struct {
 	service *PaymentService // package paymet > service.go > PaymentService
+	config  *config.Config
 }
 
 type CustomerInfo struct {
@@ -42,11 +44,14 @@ type CreatePaymentRequest struct {
 
 // router use this func to create a new instance of PaymentHandler and inject the PaymentService dependency,
 // this way we can keep the handler decoupled from the service and make it easier to test and maintain in the future.
-func NewPaymentHandler(service *PaymentService) (*PaymentHandler, error) {
+func NewPaymentHandler(service *PaymentService, cfg *config.Config) (*PaymentHandler, error) {
 	if service == nil {
 		return nil, errors.New("nil service provided to NewPaymentHandler")
 	}
-	return &PaymentHandler{service: service}, nil
+	if cfg == nil {
+		return nil, errors.New("nil config provided to NewPaymentHandler")
+	}
+	return &PaymentHandler{service: service, config: cfg}, nil
 }
 
 func (h *PaymentHandler) RefundHandler(c *gin.Context) {
@@ -110,18 +115,23 @@ func (h *PaymentHandler) CreatePaymentRequestHandler(c *gin.Context) {
 // MercadoPagoWebhookHandler receives Mercado Pago notifications.
 //
 // SECURITY RULES (see Readme.ctx.md):
-//   1. The webhook payload is NEVER trusted for financial state. Only the
-//      "data.id" is extracted and used to re-query Mercado Pago.
-//   2. The X-Signature header is verified using the official Mercado Pago
-//      manifest (id:<data.id>;request-id:<x-request-id>;ts:<ts>;).
-//   3. The service layer validates external_reference, amount and currency
-//      against the local database before any status change.
+//  1. The webhook payload is NEVER trusted for financial state. Only the
+//     "data.id" is extracted and used to re-query Mercado Pago.
+//  2. The X-Signature header is verified using the official Mercado Pago
+//     manifest (id:<data.id>;request-id:<x-request-id>;ts:<ts>;).
+//  3. The service layer validates external_reference, amount and currency
+//     against the local database before any status change.
 //
 // Response contract with Mercado Pago:
 //   - 200/201: notification processed (or intentionally ignored) — stop retries.
 //   - 4xx (except 401/403): permanent rejection — stop retries.
 //   - 5xx / 408: temporary failure — Mercado Pago will retry with backoff.
 func (h *PaymentHandler) MercadoPagoWebhookHandler(c *gin.Context) {
+	for key, values := range c.Request.Header {
+		log.Printf("[WEBHOOK] HEADER %s: %v", key, values)
+	}
+	// end test
+
 	xSignature := c.GetHeader("X-Signature")
 	xRequestID := c.GetHeader("X-Request-Id")
 	if xSignature == "" {
