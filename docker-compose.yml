@@ -41,9 +41,6 @@ services:
       - ./payment-request-api/.env
     ports:
       - "8080:8080"
-    environment:
-      RABBITMQ_URL: ${RABBITMQ_URL}
-      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,9 +55,6 @@ services:
       - ./payment-consumer/.env
     ports:
       - "8081:8081"
-    environment:
-      RABBITMQ_URL: ${RABBITMQ_URL}
-      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
     depends_on:
       postgres:
         condition: service_healthy
