@@ -40,7 +40,7 @@ type PaymentRepository interface {
 	// It allows the caller to signal that the operation should be aborted if it takes too long or if the client disconnects.
 	CreatePaymentRequest(ctx context.Context, req CreatePaymentRequest) (CreatePaymentResponse, error)
 	GetPaymentClientSecret(ctx context.Context, paymentUUID string) (PaymentStatusResponse, error)
-	UpdatePaymentStatus(ctx context.Context, paymentUUID string, status string, amountCents int64) error
+	UpdatePaymentStatus(ctx context.Context, paymentUUID string, status string, amountCents int64) (int64, error)
 	GetPaymentRequestByGatewayPaymentID(ctx context.Context, gatewayPaymentID string) (PaymentGatewayValidationData, error)
 	UpdatePaymentStatusByGatewayPaymentID(
 		ctx context.Context,
@@ -100,9 +100,12 @@ func (s *PaymentService) ProcessRefund(ctx context.Context, req RefundRequest) e
 		refundCents = req.AmountCents / 2 // Handle proportional refunds
 	}
 
-	err := s.repo.UpdatePaymentStatus(ctx, req.PaymentID, "refunded", refundCents)
+	rowsAffected, err := s.repo.UpdatePaymentStatus(ctx, req.PaymentID, "refunded", refundCents)
 	if err != nil {
 		return err
+	}
+	if rowsAffected == 0 {
+		log.Printf("[INFO] Refund for payment %s had no effect on DB status; likely in terminal state", req.PaymentID)
 	}
 
 	return nil
@@ -127,7 +130,14 @@ func (s *PaymentService) GetPaymentClientSecret(ctx context.Context, paymentUUID
 }
 
 func (s *PaymentService) UpdatePaymentStatus(ctx context.Context, paymentID string, status string, amountCents int64) error {
-	return s.repo.UpdatePaymentStatus(ctx, paymentID, status, amountCents)
+	rowsAffected, err := s.repo.UpdatePaymentStatus(ctx, paymentID, status, amountCents)
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		log.Printf("[INFO] Payment %s status was not updated; likely already in terminal state", paymentID)
+	}
+	return nil
 }
 
 func (s *PaymentService) ProcessMercadoPagoWebhook(ctx context.Context, gatewayPaymentID string) error {
