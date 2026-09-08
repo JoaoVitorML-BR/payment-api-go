@@ -49,7 +49,7 @@ func NewRouter(cfg *config.Config) *gin.Engine {
 	if err != nil {
 		panic("Failed to initialize payment service")
 	}
-	paymentHandler, err := handler.NewPaymentHandler(paymentService)
+	paymentHandler, err := handler.NewPaymentHandler(paymentService, cfg)
 	if err != nil {
 		panic("Failed to initialize payment handler")
 	}
