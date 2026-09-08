@@ -33,12 +33,15 @@ func (c *Client) CreatePayment(ctx context.Context, input paymentgateway.CreateP
 
 	amount := float64(input.AmountCents) / 100
 
+	expirationPix := time.Now().Add(30 * time.Minute).UTC().Truncate(time.Millisecond)
+
 	request := payment.Request{
 		TransactionAmount: amount,
 		Description:       input.Description,
 		PaymentMethodID:   "pix",
 		NotificationURL:   input.NotificationURL,
 		ExternalReference: input.Metadata["payment_request_uuid"],
+		DateOfExpiration:  &expirationPix,
 		Metadata:          map[string]any{},
 		Payer: &payment.PayerRequest{
 			Email:     strings.TrimSpace(input.PayerEmail),
@@ -49,10 +52,10 @@ func (c *Client) CreatePayment(ctx context.Context, input paymentgateway.CreateP
 				Number: strings.TrimSpace(input.PayerTaxID),
 			},
 			Address: &payment.AddressRequest{
-				City:         strings.TrimSpace(input.PayerCity),
-				FederalUnit:  strings.TrimSpace(input.PayerState),
-				ZipCode:      strings.TrimSpace(input.PayerPostalCode),
-				StreetName:   strings.TrimSpace(input.PayerAddress),
+				City:        strings.TrimSpace(input.PayerCity),
+				FederalUnit: strings.TrimSpace(input.PayerState),
+				ZipCode:     strings.TrimSpace(input.PayerPostalCode),
+				StreetName:  strings.TrimSpace(input.PayerAddress),
 			},
 		},
 	}
@@ -98,15 +101,15 @@ func toPaymentResult(p *payment.Response) *paymentgateway.PaymentResult {
 	}
 
 	res := &paymentgateway.PaymentResult{
-		GatewayPaymentID: strconv.Itoa(p.ID),
-		RawStatus:        p.Status,
-		Status:           normalizeStatus(p.Status),
-		AmountCents:      int64(p.TransactionAmount * 100),
-		Currency:         p.CurrencyID,
-		PixQRCode:        qrCode,
-		PixQRCodeBase64:  qrCodeBase64,
+		GatewayPaymentID:  strconv.Itoa(p.ID),
+		RawStatus:         p.Status,
+		Status:            normalizeStatus(p.Status),
+		AmountCents:       int64(p.TransactionAmount * 100),
+		Currency:          p.CurrencyID,
+		PixQRCode:         qrCode,
+		PixQRCodeBase64:   qrCodeBase64,
 		PixExpirationDate: pixExpirationDate,
-		RawResponse:      raw,
+		RawResponse:       raw,
 	}
 
 	return res

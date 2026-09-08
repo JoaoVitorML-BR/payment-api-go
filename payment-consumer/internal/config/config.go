@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -21,6 +22,7 @@ type Config struct {
 	RabbitmqQueue          string
 	MercadoPagoAccessToken string
 	MercadoPagoWebhookURL  string
+	PixExpirationTime      int
 }
 
 func LoadConfig() (*Config, error) {
@@ -80,6 +82,16 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("MERCADO_PAGO_WEBHOOK_URL is required")
 	}
 
+	pixExpirationTime := os.Getenv("PIX_EXPIRATION_TIME")
+	if pixExpirationTime == "" {
+		pixExpirationTime = "30"
+	}
+
+	pixExpirationTimeInt, err := strconv.Atoi(pixExpirationTime)
+	if err != nil {
+		return nil, fmt.Errorf("invalid PIX_EXPIRATION_TIME: %w", err)
+	}
+
 	cfg := &Config{
 		Port:                   port,
 		DbHost:                 dbHost,
@@ -91,6 +103,7 @@ func LoadConfig() (*Config, error) {
 		RabbitmqQueue:          rabbitmqQueue,
 		MercadoPagoAccessToken: mercadoPagoAccessToken,
 		MercadoPagoWebhookURL:  mercadoPagoWebhookURL,
+		PixExpirationTime:      pixExpirationTimeInt,
 	}
 	return cfg, nil
 }

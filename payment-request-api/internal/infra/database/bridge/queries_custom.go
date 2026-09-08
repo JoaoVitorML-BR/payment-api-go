@@ -3,6 +3,9 @@ package bridge
 
 import (
 	"context"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getPaymentRequestByGatewayPaymentID = `-- name: GetPaymentRequestByGatewayPaymentID :one
@@ -62,4 +65,80 @@ func (q *Queries) UpdatePaymentStatusByGatewayPaymentID(
     }
 
     return result.RowsAffected(), nil
+}
+
+const updatePaymentStatusByUUID = `-- name: UpdatePaymentStatusByUUID :execrows
+  UPDATE payment_requests
+  	SET 
+		status = $1, 
+		amount_cents = $2,
+		updated_at = NOW()
+  	WHERE uuid = $3::uuid
+		AND status NOT IN ('succeeded', 'failed', 'canceled')
+`
+
+type UpdatePaymentStatusByUUIDParams struct {
+	Status      string
+	AmountCents int64
+	Uuid        pgtype.UUID
+}
+
+func (q *Queries) UpdatePaymentStatusByUUID(
+	ctx context.Context,
+	arg *UpdatePaymentStatusByUUIDParams,
+) (int64, error) {
+	result, err := q.db.Exec(
+		ctx,
+		updatePaymentStatusByUUID,
+		arg.Status,
+		arg.AmountCents,
+		arg.Uuid,
+	)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return result.RowsAffected(), nil
+}
+
+const getPendingPaymentsForReconciliation = `-- name: GetPendingPaymentsForReconciliation :many
+SELECT gateway_payment_id, uuid::text AS uuid
+FROM payment_requests
+WHERE status = 'pending'
+  AND gateway_payment_id IS NOT NULL
+  AND gateway_payment_id != ''
+  AND updated_at <= $1
+ORDER BY updated_at ASC
+LIMIT $2
+`
+
+type GetPendingPaymentsForReconciliationRow struct {
+	GatewayPaymentID string
+	Uuid             string
+}
+
+func (q *Queries) GetPendingPaymentsForReconciliation(ctx context.Context, maxUpdatedAt time.Time, limit int32) ([]GetPendingPaymentsForReconciliationRow, error) {
+	rows, err := q.db.Query(ctx, getPendingPaymentsForReconciliation, maxUpdatedAt, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []GetPendingPaymentsForReconciliationRow
+	for rows.Next() {
+		var i GetPendingPaymentsForReconciliationRow
+		var gwID *string
+		if err := rows.Scan(&gwID, &i.Uuid); err != nil {
+			return nil, err
+		}
+		if gwID != nil {
+			i.GatewayPaymentID = *gwID
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

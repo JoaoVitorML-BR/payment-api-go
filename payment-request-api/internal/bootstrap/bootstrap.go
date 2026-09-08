@@ -2,9 +2,12 @@
 package bootstrap
 
 import (
+	"context"
 	"log"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/config"
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/infra/messaging/rabbitmq"
@@ -49,10 +52,33 @@ func NewRouter(cfg *config.Config) *gin.Engine {
 	if err != nil {
 		panic("Failed to initialize payment service")
 	}
-	paymentHandler, err := handler.NewPaymentHandler(paymentService)
+	paymentHandler, err := handler.NewPaymentHandler(paymentService, cfg)
 	if err != nil {
 		panic("Failed to initialize payment handler")
 	}
 
+	intervalSec := 60
+	if envInterval := os.Getenv("RECONCILIATION_INTERVAL_SECONDS"); envInterval != "" {
+		if val, err := strconv.Atoi(envInterval); err == nil && val > 0 {
+			intervalSec = val
+		}
+	}
+
+	minAgeMin := 2
+	if envMinAge := os.Getenv("RECONCILIATION_MIN_AGE_MINUTES"); envMinAge != "" {
+		if val, err := strconv.Atoi(envMinAge); err == nil && val > 0 {
+			minAgeMin = val
+		}
+	}
+
+	reconciler := handler.NewReconcilerWorker(
+		paymentService,
+		time.Duration(intervalSec)*time.Second,
+		time.Duration(minAgeMin)*time.Minute,
+		50,
+	)
+	reconciler.Start(context.Background())
+
 	return server.SetupRouter(paymentHandler)
 }
+

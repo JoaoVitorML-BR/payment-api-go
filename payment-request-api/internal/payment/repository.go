@@ -19,20 +19,20 @@ type PaymentRepositoryDB struct {
 	queries *dbbridge.Queries
 }
 
-func (r *PaymentRepositoryDB) UpdatePaymentStatus(ctx context.Context, paymentUUID string, status string, amountCents int64) error {
+func (r *PaymentRepositoryDB) UpdatePaymentStatus(ctx context.Context, paymentUUID string, status string, amountCents int64) (int64, error) {
 	parsedUUID := parseStringToUUID(paymentUUID)
 
-	params := dbbridge.UpdatePaymentStatusParams{
+	params := dbbridge.UpdatePaymentStatusByUUIDParams{
 		Status:      status,
 		AmountCents: amountCents,
 		Uuid:        parsedUUID,
 	}
 
-	err := r.queries.UpdatePaymentStatus(ctx, params)
+	rowsAffected, err := r.queries.UpdatePaymentStatusByUUID(ctx, &params)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return nil
+	return rowsAffected, nil
 }
 
 func NewPaymentRepositoryDB(pool *pgxpool.Pool) (*PaymentRepositoryDB, error) {
@@ -152,4 +152,20 @@ func (r *PaymentRepositoryDB) CreatePaymentRequest(ctx context.Context, req Crea
 		CreatedAt:     row.CreatedAt.Time,
 		UpdatedAt:     row.UpdatedAt.Time,
 	}, nil
+}
+
+func (r *PaymentRepositoryDB) GetPendingPaymentsForReconciliation(ctx context.Context, maxUpdatedAt time.Time, limit int32) ([]ReconciliationItem, error) {
+	rows, err := r.queries.GetPendingPaymentsForReconciliation(ctx, maxUpdatedAt, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]ReconciliationItem, len(rows))
+	for i, row := range rows {
+		items[i] = ReconciliationItem{
+			GatewayPaymentID: row.GatewayPaymentID,
+			PaymentUUID:      row.Uuid,
+		}
+	}
+	return items, nil
 }
