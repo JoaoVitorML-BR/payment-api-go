@@ -4,6 +4,8 @@ package bridge
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getPaymentRequestByGatewayPaymentID = `-- name: GetPaymentRequestByGatewayPaymentID :one
@@ -63,6 +65,41 @@ func (q *Queries) UpdatePaymentStatusByGatewayPaymentID(
     }
 
     return result.RowsAffected(), nil
+}
+
+const updatePaymentStatusByUUID = `-- name: UpdatePaymentStatusByUUID :execrows
+  UPDATE payment_requests
+  	SET 
+		status = $1, 
+		amount_cents = $2,
+		updated_at = NOW()
+  	WHERE uuid = $3::uuid
+		AND status NOT IN ('succeeded', 'failed', 'canceled')
+`
+
+type UpdatePaymentStatusByUUIDParams struct {
+	Status      string
+	AmountCents int64
+	Uuid        pgtype.UUID
+}
+
+func (q *Queries) UpdatePaymentStatusByUUID(
+	ctx context.Context,
+	arg *UpdatePaymentStatusByUUIDParams,
+) (int64, error) {
+	result, err := q.db.Exec(
+		ctx,
+		updatePaymentStatusByUUID,
+		arg.Status,
+		arg.AmountCents,
+		arg.Uuid,
+	)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return result.RowsAffected(), nil
 }
 
 const getPendingPaymentsForReconciliation = `-- name: GetPendingPaymentsForReconciliation :many
