@@ -16,6 +16,11 @@ import (
 const maxSignatureAge = 5 * time.Minute
 
 func VerifySignature(signatureHeader string, requestID string, dataID string, now time.Time) error {
+
+	fmt.Printf("X-Signature recebido: %q\n", signatureHeader)
+	fmt.Printf("X-Request-Id recebido: %q\n", requestID)
+	fmt.Printf("dataID recebido: %q\n", dataID)
+
 	secret := os.Getenv("MERCADO_PAGO_WEBHOOK_SECRET")
 	if strings.TrimSpace(secret) == "" {
 		return errors.New("mercado pago webhook secret is not configured")
@@ -42,13 +47,27 @@ func VerifySignature(signatureHeader string, requestID string, dataID string, no
 		return errors.New("missing request id or data.id for signature verification")
 	}
 
-	manifest := fmt.Sprintf("id:%s;request-id:%s;ts:%s;", dataID, requestID, parts["ts"])
+	manifest := fmt.Sprintf(
+		"id:%s;request-id:%s;ts:%s;",
+		dataID,
+		requestID,
+		parts["ts"],
+	)
+
 	h := hmac.New(sha256.New, []byte(secret))
 	h.Write([]byte(manifest))
+
 	expectedSignature := hex.EncodeToString(h.Sum(nil))
 	received := strings.ToLower(parts["v1"])
 
-	if !hmac.Equal([]byte(received), []byte(expectedSignature)) {
+	fmt.Printf(
+		"manifest: %s | expectedSignature: %s | received: %s\n",
+		manifest,
+		expectedSignature,
+		received,
+	)
+
+	if !hmac.Equal([]byte(expectedSignature), []byte(received)) {
 		return errors.New("invalid signature")
 	}
 
