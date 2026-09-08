@@ -19,20 +19,20 @@ type PaymentRepositoryDB struct {
 	queries *dbbridge.Queries
 }
 
-func (r *PaymentRepositoryDB) UpdatePaymentStatus(ctx context.Context, paymentUUID string, status string, amountCents int64) error {
+func (r *PaymentRepositoryDB) UpdatePaymentStatus(ctx context.Context, paymentUUID string, status string, amountCents int64) (int64, error) {
 	parsedUUID := parseStringToUUID(paymentUUID)
 
-	params := dbbridge.UpdatePaymentStatusParams{
+	params := dbbridge.UpdatePaymentStatusByUUIDParams{
 		Status:      status,
 		AmountCents: amountCents,
 		Uuid:        parsedUUID,
 	}
 
-	err := r.queries.UpdatePaymentStatus(ctx, params)
+	rowsAffected, err := r.queries.UpdatePaymentStatusByUUID(ctx, &params)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return nil
+	return rowsAffected, nil
 }
 
 func NewPaymentRepositoryDB(pool *pgxpool.Pool) (*PaymentRepositoryDB, error) {
