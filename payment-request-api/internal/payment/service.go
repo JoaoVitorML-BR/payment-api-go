@@ -30,6 +30,11 @@ type PaymentStatusResponse struct {
 	PixExpirationAt  *time.Time `json:"pix_expiration_at,omitempty"`
 }
 
+type ReconciliationItem struct {
+	GatewayPaymentID string
+	PaymentUUID      string
+}
+
 type PaymentRepository interface {
 	// ctx is a standard Go context that can be used for cancellation and timeouts.
 	// It allows the caller to signal that the operation should be aborted if it takes too long or if the client disconnects.
@@ -42,6 +47,7 @@ type PaymentRepository interface {
 		gatewayPaymentID string,
 		status string,
 	) (int64, error)
+	GetPendingPaymentsForReconciliation(ctx context.Context, maxUpdatedAt time.Time, limit int32) ([]ReconciliationItem, error)
 }
 
 type PaymentGatewayValidationData struct {
@@ -190,6 +196,42 @@ func (s *PaymentService) ProcessMercadoPagoWebhook(ctx context.Context, gatewayP
 	)
 
 	return nil
+}
+
+// ReconcilePendingPayments scans payment requests stuck in 'pending' status older than minAge
+// and re-queries Mercado Pago authoritatively to synchronize local database state.
+func (s *PaymentService) ReconcilePendingPayments(ctx context.Context, minAge time.Duration, limit int32) (int, error) {
+	maxUpdatedAt := time.Now().Add(-minAge)
+	items, err := s.repo.GetPendingPaymentsForReconciliation(ctx, maxUpdatedAt, limit)
+	if err != nil {
+		return 0, fmt.Errorf("fetch pending payments for reconciliation: %w", err)
+	}
+
+	if len(items) == 0 {
+		return 0, nil
+	}
+
+	reconciledCount := 0
+	for _, item := range items {
+		if strings.TrimSpace(item.GatewayPaymentID) == "" {
+			continue
+		}
+
+		log.Printf("[RECONCILIATION] Reconciling payment_uuid=%s, gateway_payment_id=%s", item.PaymentUUID, item.GatewayPaymentID)
+		err := s.ProcessMercadoPagoWebhook(ctx, item.GatewayPaymentID)
+		if err != nil {
+			if errors.Is(err, ErrWebhookRetryable) {
+				log.Printf("[RECONCILIATION] Retryable error reconciling payment %s: %v", item.PaymentUUID, err)
+			} else {
+				log.Printf("[RECONCILIATION] Permanent error reconciling payment %s: %v", item.PaymentUUID, err)
+			}
+			continue
+		}
+
+		reconciledCount++
+	}
+
+	return reconciledCount, nil
 }
 
 func (s *PaymentService) CreatePayment(ctx context.Context, req CreatePaymentRequest) (CreatePaymentResponse, error) {
