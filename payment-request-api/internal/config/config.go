@@ -12,8 +12,9 @@ import (
 )
 
 type Config struct {
-	Port string
-	Pool *pgxpool.Pool
+	Port                     string
+	Pool                     *pgxpool.Pool
+	MercadoPagoWebhookSecret string
 }
 
 func LoadConfig() (*Config, error) {
@@ -53,6 +54,13 @@ func LoadConfig() (*Config, error) {
 		dbName = "payment_request"
 	}
 
+	mercadoPagoWebhookSecret := os.Getenv("MERCADO_PAGO_WEBHOOK_SECRET")
+	if mercadoPagoWebhookSecret == "" {
+		return nil, fmt.Errorf(
+			"MERCADO_PAGO_WEBHOOK_SECRET is not set in the environment",
+		)
+	}
+
 	// Create pgxpool connection
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s", dbUser, dbPassword, dbHost, dbPort, dbName)
 	pool, err := pgxpool.New(context.Background(), dsn)
@@ -67,8 +75,9 @@ func LoadConfig() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Port: port,
-		Pool: pool,
+		Port:                     port,
+		Pool:                     pool,
+		MercadoPagoWebhookSecret: mercadoPagoWebhookSecret,
 	}
 	return cfg, nil
 }
