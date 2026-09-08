@@ -153,3 +153,19 @@ func (r *PaymentRepositoryDB) CreatePaymentRequest(ctx context.Context, req Crea
 		UpdatedAt:     row.UpdatedAt.Time,
 	}, nil
 }
+
+func (r *PaymentRepositoryDB) GetPendingPaymentsForReconciliation(ctx context.Context, maxUpdatedAt time.Time, limit int32) ([]ReconciliationItem, error) {
+	rows, err := r.queries.GetPendingPaymentsForReconciliation(ctx, maxUpdatedAt, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]ReconciliationItem, len(rows))
+	for i, row := range rows {
+		items[i] = ReconciliationItem{
+			GatewayPaymentID: row.GatewayPaymentID,
+			PaymentUUID:      row.Uuid,
+		}
+	}
+	return items, nil
+}
