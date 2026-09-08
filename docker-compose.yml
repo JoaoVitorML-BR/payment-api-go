@@ -38,7 +38,8 @@ services:
       context: .
       dockerfile: ./payment-request-api/Dockerfile
     env_file:
-      - ./payment-request-api/.env
+      - path: ./payment-request-api/.env
+        required: false
     ports:
       - "8080:8080"
     depends_on:
@@ -52,7 +53,8 @@ services:
       context: .
       dockerfile: ./payment-consumer/Dockerfile
     env_file:
-      - ./payment-consumer/.env
+      - path: ./payment-consumer/.env
+        required: false
     ports:
       - "8081:8081"
     depends_on:
