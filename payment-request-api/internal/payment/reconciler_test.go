@@ -23,8 +23,8 @@ func (m *mockRepoForReconciliation) GetPaymentClientSecret(ctx context.Context, 
 	return PaymentStatusResponse{}, nil
 }
 
-func (m *mockRepoForReconciliation) UpdatePaymentStatus(ctx context.Context, paymentUUID string, status string, amountCents int64) error {
-	return nil
+func (m *mockRepoForReconciliation) UpdatePaymentStatus(ctx context.Context, paymentUUID string, status string, amountCents int64) (int64, error) {
+	return 1, nil
 }
 
 func (m *mockRepoForReconciliation) GetPaymentRequestByGatewayPaymentID(ctx context.Context, gatewayPaymentID string) (PaymentGatewayValidationData, error) {
