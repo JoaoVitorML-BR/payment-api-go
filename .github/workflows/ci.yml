@@ -111,6 +111,7 @@ jobs:
         with:
           version: v1.64.4
           working-directory: ${{ matrix.service }}
+          args: --config=../.golangci.yml
 
   integration:
     name: Integration tests
