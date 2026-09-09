@@ -38,12 +38,10 @@ services:
       context: .
       dockerfile: ./payment-request-api/Dockerfile
     env_file:
-      - ./payment-request-api/.env
+      - path: ./payment-request-api/.env
+        required: false
     ports:
       - "8080:8080"
-    environment:
-      RABBITMQ_URL: ${RABBITMQ_URL}
-      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,12 +53,10 @@ services:
       context: .
       dockerfile: ./payment-consumer/Dockerfile
     env_file:
-      - ./payment-consumer/.env
+      - path: ./payment-consumer/.env
+        required: false
     ports:
       - "8081:8081"
-    environment:
-      RABBITMQ_URL: ${RABBITMQ_URL}
-      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
     depends_on:
       postgres:
         condition: service_healthy

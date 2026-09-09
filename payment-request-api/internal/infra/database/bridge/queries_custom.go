@@ -49,22 +49,22 @@ type UpdatePaymentStatusByGatewayPaymentIDParams struct {
 }
 
 func (q *Queries) UpdatePaymentStatusByGatewayPaymentID(
-    ctx context.Context,
-    arg *UpdatePaymentStatusByGatewayPaymentIDParams,
+	ctx context.Context,
+	arg *UpdatePaymentStatusByGatewayPaymentIDParams,
 ) (int64, error) {
 
-    result, err := q.db.Exec(
-        ctx,
-        updatePaymentStatusByGatewayPaymentID,
-        arg.Status,
-        arg.GatewayPaymentID,
-    )
+	result, err := q.db.Exec(
+		ctx,
+		updatePaymentStatusByGatewayPaymentID,
+		arg.Status,
+		arg.GatewayPaymentID,
+	)
 
-    if err != nil {
-        return 0, err
-    }
+	if err != nil {
+		return 0, err
+	}
 
-    return result.RowsAffected(), nil
+	return result.RowsAffected(), nil
 }
 
 const updatePaymentStatusByUUID = `-- name: UpdatePaymentStatusByUUID :execrows

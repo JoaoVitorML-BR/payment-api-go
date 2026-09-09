@@ -1,0 +1,209 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - "feature/**"
+      - "fix/**"
+      - "refactor/**"
+      - "test/**"
+      - "chore/**"
+
+  pull_request:
+    branches:
+      - main
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Quality - ${{ matrix.service }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - payment-request-api
+          - payment-consumer
+
+    defaults:
+      run:
+        working-directory: ${{ matrix.service }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+          cache-dependency-path: |
+            payment-request-api/go.sum
+            payment-consumer/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Check formatting
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "The following files are not formatted:"
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Check imports
+        run: |
+          go install golang.org/x/tools/cmd/goimports@latest
+          files=$(goimports -l .)
+          if [ -n "$files" ]; then
+            echo "The following files have incorrect imports:"
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Unit tests
+        run: go test ./...
+
+      - name: Race detector
+        run: go test -race ./...
+
+      - name: Build
+        run: go build ./cmd/main.go
+
+  lint:
+    name: Lint - ${{ matrix.service }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - payment-request-api
+          - payment-consumer
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+          cache-dependency-path: |
+            payment-request-api/go.sum
+            payment-consumer/go.sum
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          install-mode: goinstall
+          working-directory: ${{ matrix.service }}
+          args: --config=../.golangci.yml
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+
+    env:
+      DB_PS_USER: test
+      DB_PS_PASSWORD: test
+      DB_PS_DATABASE: payment_test
+      RABBITMQ_DEFAULT_USER: test
+      RABBITMQ_DEFAULT_PASS: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+          cache-dependency-path: |
+            payment-request-api/go.sum
+            payment-consumer/go.sum
+
+      - name: Start infrastructure
+        run: |
+          docker compose up -d --wait postgres rabbitmq
+
+      - name: Check containers
+        run: docker compose ps
+
+      - name: Test payment-request-api
+        working-directory: payment-request-api
+        env:
+          DB_PS_HOST: localhost
+          DB_PS_PORT: 5433
+          DB_PS_USER: test
+          DB_PS_PASSWORD: test
+          DB_PS_DATABASE: payment_test
+          RABBITMQ_URL: amqp://test:test@localhost:5672/
+          MERCADO_PAGO_WEBHOOK_SECRET: test-webhook-secret
+        run: |
+          go mod download
+          go test ./...
+
+      - name: Test payment-consumer
+        working-directory: payment-consumer
+        env:
+          DB_PS_HOST: localhost
+          DB_PS_PORT: 5433
+          DB_PS_USER: test
+          DB_PS_PASSWORD: test
+          DB_PS_DATABASE: payment_test
+          RABBITMQ_URL: amqp://test:test@localhost:5672/
+          MERCADO_PAGO_ACCESS_TOKEN: test-access-token
+          MERCADO_PAGO_WEBHOOK_URL: http://localhost:8080/webhook/mercadopago
+        run: |
+          go mod download
+          go test ./...
+
+      - name: Show infrastructure logs
+        if: failure()
+        run: docker compose logs postgres rabbitmq
+
+      - name: Stop infrastructure
+        if: always()
+        run: docker compose down -v
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+
+    needs:
+      - quality
+      - lint
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build payment-request-api
+        run: |
+          docker build \
+            -f payment-request-api/Dockerfile \
+            -t payment-request-api:test \
+            .
+
+      - name: Build payment-consumer
+        run: |
+          docker build \
+            -f payment-consumer/Dockerfile \
+            -t payment-consumer:test \
+            .

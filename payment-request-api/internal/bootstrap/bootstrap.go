@@ -81,4 +81,3 @@ func NewRouter(cfg *config.Config) *gin.Engine {
 
 	return server.SetupRouter(paymentHandler)
 }
-

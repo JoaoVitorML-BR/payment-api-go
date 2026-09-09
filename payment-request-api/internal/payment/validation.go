@@ -33,7 +33,7 @@ func (s *PaymentService) validateCreatePaymentRequest(req CreatePaymentRequest) 
 	return s.validatePixPayment(req)
 }
 
-func (s *PaymentService) validateCreditPayment(req CreatePaymentRequest) error {
+func (s *PaymentService) ValidateCreditPayment(req CreatePaymentRequest) error {
 	if req.Installments != nil {
 		if *req.Installments < 1 || *req.Installments > 12 {
 			return errors.New("installments must be between 1 and 12")

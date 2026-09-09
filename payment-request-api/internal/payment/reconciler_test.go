@@ -10,9 +10,9 @@ import (
 )
 
 type mockRepoForReconciliation struct {
-	pendingItems     []ReconciliationItem
-	validationData   map[string]PaymentGatewayValidationData
-	updatedStatuses  map[string]string
+	pendingItems    []ReconciliationItem
+	validationData  map[string]PaymentGatewayValidationData
+	updatedStatuses map[string]string
 }
 
 func (m *mockRepoForReconciliation) CreatePaymentRequest(ctx context.Context, req CreatePaymentRequest) (CreatePaymentResponse, error) {
