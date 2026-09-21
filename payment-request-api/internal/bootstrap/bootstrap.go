@@ -57,6 +57,28 @@ func NewRouter(cfg *config.Config) *gin.Engine {
 		panic("Failed to initialize payment handler")
 	}
 
+	var oauthHandler *server.OAuthHandler
+	if cfg.MercadoPagoOAuthClientID != "" {
+		oauthClient, oauthErr := paymentmercadopago.NewOAuthClient(
+			cfg.MercadoPagoOAuthClientID,
+			cfg.MercadoPagoOAuthClientSecret,
+		)
+		if oauthErr != nil {
+			panic("Failed to initialize Mercado Pago OAuth client")
+		}
+		tokenStore, storeErr := paymentmercadopago.NewEncryptedFileTokenStore(
+			cfg.MercadoPagoOAuthTokenFile,
+			cfg.MercadoPagoOAuthEncryptionKey,
+		)
+		if storeErr != nil {
+			panic("Failed to initialize encrypted OAuth token store")
+		}
+		oauthHandler, err = server.NewOAuthHandler(oauthClient, tokenStore, cfg.MercadoPagoOAuthRedirectURI)
+		if err != nil {
+			panic("Failed to initialize Mercado Pago OAuth handler")
+		}
+	}
+
 	intervalSec := 60
 	if envInterval := os.Getenv("RECONCILIATION_INTERVAL_SECONDS"); envInterval != "" {
 		if val, err := strconv.Atoi(envInterval); err == nil && val > 0 {
@@ -79,5 +101,5 @@ func NewRouter(cfg *config.Config) *gin.Engine {
 	)
 	reconciler.Start(context.Background())
 
-	return server.SetupRouter(paymentHandler)
+	return server.SetupRouter(paymentHandler, oauthHandler)
 }

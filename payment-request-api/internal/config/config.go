@@ -12,9 +12,14 @@ import (
 )
 
 type Config struct {
-	Port                     string
-	Pool                     *pgxpool.Pool
-	MercadoPagoWebhookSecret string
+	Port                          string
+	Pool                          *pgxpool.Pool
+	MercadoPagoWebhookSecret      string
+	MercadoPagoOAuthClientID      string
+	MercadoPagoOAuthClientSecret  string
+	MercadoPagoOAuthRedirectURI   string
+	MercadoPagoOAuthTokenFile     string
+	MercadoPagoOAuthEncryptionKey string
 }
 
 func LoadConfig() (*Config, error) {
@@ -61,6 +66,33 @@ func LoadConfig() (*Config, error) {
 		)
 	}
 
+	oauthClientID := os.Getenv("MERCADO_PAGO_OAUTH_CLIENT_ID")
+	oauthClientSecret := os.Getenv("MERCADO_PAGO_OAUTH_CLIENT_SECRET")
+	oauthRedirectURI := os.Getenv("MERCADO_PAGO_OAUTH_REDIRECT_URI")
+	oauthTokenFile := os.Getenv("MERCADO_PAGO_OAUTH_TOKEN_FILE")
+	oauthEncryptionKey := os.Getenv("MERCADO_PAGO_OAUTH_ENCRYPTION_KEY")
+	oauthValues := []string{oauthClientID, oauthClientSecret, oauthRedirectURI, oauthTokenFile, oauthEncryptionKey}
+	oauthConfigured := false
+	for _, value := range oauthValues {
+		if value != "" {
+			oauthConfigured = true
+			break
+		}
+	}
+	if oauthConfigured {
+		for name, value := range map[string]string{
+			"MERCADO_PAGO_OAUTH_CLIENT_ID":      oauthClientID,
+			"MERCADO_PAGO_OAUTH_CLIENT_SECRET":  oauthClientSecret,
+			"MERCADO_PAGO_OAUTH_REDIRECT_URI":   oauthRedirectURI,
+			"MERCADO_PAGO_OAUTH_TOKEN_FILE":     oauthTokenFile,
+			"MERCADO_PAGO_OAUTH_ENCRYPTION_KEY": oauthEncryptionKey,
+		} {
+			if value == "" {
+				return nil, fmt.Errorf("%s is required when Mercado Pago OAuth is enabled", name)
+			}
+		}
+	}
+
 	// Create pgxpool connection
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s", dbUser, dbPassword, dbHost, dbPort, dbName)
 	pool, err := pgxpool.New(context.Background(), dsn)
@@ -75,9 +107,14 @@ func LoadConfig() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Port:                     port,
-		Pool:                     pool,
-		MercadoPagoWebhookSecret: mercadoPagoWebhookSecret,
+		Port:                          port,
+		Pool:                          pool,
+		MercadoPagoWebhookSecret:      mercadoPagoWebhookSecret,
+		MercadoPagoOAuthClientID:      oauthClientID,
+		MercadoPagoOAuthClientSecret:  oauthClientSecret,
+		MercadoPagoOAuthRedirectURI:   oauthRedirectURI,
+		MercadoPagoOAuthTokenFile:     oauthTokenFile,
+		MercadoPagoOAuthEncryptionKey: oauthEncryptionKey,
 	}
 	return cfg, nil
 }
