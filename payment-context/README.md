@@ -64,6 +64,9 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 - Added idempotent local refund reservation with cumulative amount protection.
 - Added `succeeded`, `partially_refunded`, and `refunded` state updates after gateway approval.
 - Added unit coverage for the successful refund path.
+- Added refund recovery that lists local `processing` operations and matches already-approved gateway refunds before any new attempt.
+- Added row locking during refund reservation so concurrent refunds cannot exceed the original amount.
+- Added unit coverage for the recovery path.
 
 ## Still required
 
@@ -73,13 +76,14 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 - Real provider refund client and refund reconciliation webhook.
 - Atomic refund reservation and cumulative amount validation.
 - Recovery/reconciliation for refunds left in `processing` after a process or network failure.
+- Production integration tests for refund recovery, ambiguous equal-amount refunds, and provider failures.
 - Integration tests with Mercado Pago test accounts for split, partial/full refund, insufficient balance, and duplicate notifications.
 
 ## Current continuation point
 
 - Branch: `feature/mercado-pago-split-refunds`
-- Last completed commit: `521410f feat: execute Mercado Pago refunds`.
-- Next step: run manual test-account payment and refund scenarios, then add refund recovery/reconciliation.
+- Last completed commit: `e801d1b feat: reconcile pending Mercado Pago refunds`.
+- Next step: run manual test-account payment/refund scenarios and verify recovery after a forced process interruption.
 
 Payment creation now sends `application_fee` only when `seller_id` and the matching encrypted seller token are available. A global token is never used for a seller split.
 
@@ -99,3 +103,5 @@ The current implementation supports one encrypted seller-token file for the manu
 ## Manual refund test
 
 Send `POST /payment/refund` with `payment_id`, `amount_cents`, `idempotency_key`, and a business `reason`. The consulting API owns the policy percentage; this payment API receives the already-authorized amount. A duplicate `idempotency_key` does not call the gateway again after local success. Mercado Pago may still require balance and may reject refunds after its provider limits.
+
+Refund recovery matches an approved Mercado Pago refund by payment and amount. If multiple approved refunds have the same amount, the provider result is ambiguous and must be reviewed rather than automatically attributed.
