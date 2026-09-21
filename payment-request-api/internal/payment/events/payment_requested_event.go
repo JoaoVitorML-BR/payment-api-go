@@ -6,15 +6,17 @@ import (
 )
 
 type PaymentRequestedEvent struct {
-	EventName      string        `json:"event_name"`
-	PaymentID      string        `json:"payment_id"`
-	IdempotencyKey string        `json:"idempotency_key"`
-	AmountCents    int64         `json:"amount_cents"`
-	Currency       string        `json:"currency"`
-	PaymentMethod  string        `json:"payment_method"`
-	Customer       *CustomerInfo `json:"customer,omitempty"`
-	Installments   *int          `json:"installments,omitempty"`
-	OccurredAt     time.Time     `json:"occurred_at"`
+	EventName           string        `json:"event_name"`
+	PaymentID           string        `json:"payment_id"`
+	IdempotencyKey      string        `json:"idempotency_key"`
+	AmountCents         int64         `json:"amount_cents"`
+	Currency            string        `json:"currency"`
+	PaymentMethod       string        `json:"payment_method"`
+	Customer            *CustomerInfo `json:"customer,omitempty"`
+	Installments        *int          `json:"installments,omitempty"`
+	SellerID            string        `json:"seller_id,omitempty"`
+	MarketplaceFeeCents int64         `json:"marketplace_fee_cents,omitempty"`
+	OccurredAt          time.Time     `json:"occurred_at"`
 }
 
 type CustomerInfo struct {
@@ -28,16 +30,18 @@ type CustomerInfo struct {
 	PostalCode string `json:"postal_code"`
 }
 
-func NewPaymentRequestedEvent(paymentUUID string, idempotencyKey string, amountCents int64, currency string, paymentMethod string, customer *CustomerInfo, installments *int) *PaymentRequestedEvent {
+func NewPaymentRequestedEvent(paymentUUID string, idempotencyKey string, amountCents int64, currency string, paymentMethod string, customer *CustomerInfo, installments *int, sellerID string, marketplaceFeeCents int64) *PaymentRequestedEvent {
 	return &PaymentRequestedEvent{
-		EventName:      "payment.requested.v1",
-		PaymentID:      paymentUUID,
-		IdempotencyKey: idempotencyKey,
-		AmountCents:    amountCents,
-		Currency:       currency,
-		PaymentMethod:  paymentMethod,
-		Customer:       customer,
-		Installments:   installments,
-		OccurredAt:     time.Now().UTC(),
+		EventName:           "payment.requested.v1",
+		PaymentID:           paymentUUID,
+		IdempotencyKey:      idempotencyKey,
+		AmountCents:         amountCents,
+		Currency:            currency,
+		PaymentMethod:       paymentMethod,
+		Customer:            customer,
+		Installments:        installments,
+		SellerID:            sellerID,
+		MarketplaceFeeCents: marketplaceFeeCents,
+		OccurredAt:          time.Now().UTC(),
 	}
 }

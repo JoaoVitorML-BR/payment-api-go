@@ -124,6 +124,8 @@ func (r *PaymentRepositoryDB) CreatePaymentRequest(ctx context.Context, req Crea
 		StripePaymentIntentID: pgtype.Text{Valid: false},
 		Gateway:               "mercado_pago",
 		GatewayPaymentID:      pgtype.Text{Valid: false},
+		SellerID:              pgtype.Text{String: req.SellerID, Valid: req.SellerID != ""},
+		MarketplaceFeeCents:   req.MarketplaceFeeCents,
 	}
 
 	row, err := r.queries.CreatePaymentRequest(ctx, params)

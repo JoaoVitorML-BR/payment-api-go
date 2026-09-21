@@ -14,6 +14,12 @@ func (s *PaymentService) validateCreatePaymentRequest(req CreatePaymentRequest) 
 	if req.AmountCents <= 0 {
 		return errors.New("amount_cents must be greater than zero")
 	}
+	if req.MarketplaceFeeCents < 0 || req.MarketplaceFeeCents >= req.AmountCents {
+		return errors.New("marketplace_fee_cents must be non-negative and lower than amount_cents")
+	}
+	if strings.TrimSpace(req.SellerID) == "" && req.MarketplaceFeeCents > 0 {
+		return errors.New("seller_id is required when marketplace_fee_cents is provided")
+	}
 
 	currency := strings.ToUpper(strings.TrimSpace(req.Currency))
 	if len(currency) != 3 {

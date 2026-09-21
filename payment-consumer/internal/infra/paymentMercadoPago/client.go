@@ -7,13 +7,15 @@ import (
 )
 
 type Client struct {
-	cfg *config.Config
+	cfg           *config.Config
+	tokenFile     string
+	encryptionKey string
 }
 
-func NewClient(accessToken string) (*Client, error) {
+func NewClient(accessToken, tokenFile, encryptionKey string) (*Client, error) {
 	cfg, err := config.New(accessToken)
 	if err != nil {
 		return nil, fmt.Errorf("create mercado pago config: %w", err)
 	}
-	return &Client{cfg: cfg}, nil
+	return &Client{cfg: cfg, tokenFile: tokenFile, encryptionKey: encryptionKey}, nil
 }

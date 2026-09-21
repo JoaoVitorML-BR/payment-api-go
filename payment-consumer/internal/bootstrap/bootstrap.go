@@ -23,7 +23,7 @@ func Bootstrap(cfg *config.Config) (*Dependencies, error) {
 		return nil, err
 	}
 
-	gateway, err := consumermercadopago.NewClient(cfg.MercadoPagoAccessToken)
+	gateway, err := consumermercadopago.NewClient(cfg.MercadoPagoAccessToken, cfg.MercadoPagoOAuthTokenFile, cfg.MercadoPagoOAuthEncryptionKey)
 	if err != nil {
 		return nil, err
 	}

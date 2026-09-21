@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/paymentgateway"
+	"github.com/mercadopago/sdk-go/pkg/config"
 	"github.com/mercadopago/sdk-go/pkg/payment"
 	"github.com/mercadopago/sdk-go/pkg/requestoptions"
 )
@@ -29,7 +30,23 @@ func (c *Client) CreatePayment(ctx context.Context, input paymentgateway.CreateP
 		return nil, fmt.Errorf("paymentmercadopago: payer tax id must be a valid CPF or CNPJ for pix payments")
 	}
 
-	client := payment.NewClient(c.cfg)
+	sdkConfig := c.cfg
+	if strings.TrimSpace(input.SellerID) != "" {
+		if input.MarketplaceFeeCents <= 0 {
+			return nil, fmt.Errorf("paymentmercadopago: marketplace fee is required for seller split")
+		}
+		sellerToken, err := c.sellerAccessToken(input.SellerID)
+		if err != nil {
+			return nil, fmt.Errorf("paymentmercadopago: resolve seller token: %w", err)
+		}
+		sdkConfig, err = config.New(sellerToken)
+		if err != nil {
+			return nil, fmt.Errorf("paymentmercadopago: create seller config: %w", err)
+		}
+	} else if input.MarketplaceFeeCents > 0 {
+		return nil, fmt.Errorf("paymentmercadopago: seller id is required for marketplace fee")
+	}
+	client := payment.NewClient(sdkConfig)
 
 	amount := float64(input.AmountCents) / 100
 
@@ -42,6 +59,7 @@ func (c *Client) CreatePayment(ctx context.Context, input paymentgateway.CreateP
 		NotificationURL:   input.NotificationURL,
 		ExternalReference: input.Metadata["payment_request_uuid"],
 		DateOfExpiration:  &expirationPix,
+		ApplicationFee:    float64(input.MarketplaceFeeCents) / 100,
 		Metadata:          map[string]any{},
 		Payer: &payment.PayerRequest{
 			Email:     strings.TrimSpace(input.PayerEmail),

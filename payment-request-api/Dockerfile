@@ -14,6 +14,7 @@ WORKDIR /app
 
 # Create a non-root user and copy the built application
 RUN adduser -D -H -u 10001 appuser
+RUN mkdir -p /app/data && chown -R appuser:appuser /app/data
 COPY --from=builder /app/main /app/main
 # NOTE: Removed COPY for .env — it is handled via docker-compose/environment variables only.
 

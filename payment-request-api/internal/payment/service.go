@@ -291,6 +291,8 @@ func (s *PaymentService) publishPaymentRequestedEvent(req CreatePaymentRequest, 
 		req.PaymentMethod,
 		customer,
 		req.Installments,
+		req.SellerID,
+		req.MarketplaceFeeCents,
 	)
 
 	return s.publisher.Publish(event)

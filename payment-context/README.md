@@ -57,12 +57,15 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 - Added an opt-in OAuth start/callback flow at `/oauth/mercadopago/start` and `/oauth/mercadopago/callback`.
 - Added AES-256-GCM encrypted file storage for seller credentials with restrictive file permissions.
 - Added one-time, ten-minute OAuth state validation to prevent callback replay and state reuse.
+- Propagated `seller_id` and `marketplace_fee_cents` from the payment request through RabbitMQ to the consumer.
+- Added seller-token decryption in the consumer and sent `application_fee` only with the matching seller token.
+- Shared the encrypted token volume between Docker services.
 
 ## Still required
 
 - Add application authentication/authorization around the OAuth start route for production use.
 - Add token renewal; never log or publish tokens.
-- `application_fee` in Mercado Pago payment creation.
+- Token renewal and application authentication around the OAuth start route for production use.
 - Real provider refund client and refund reconciliation webhook.
 - Atomic refund reservation and cumulative amount validation.
 - Integration tests with Mercado Pago test accounts for split, partial/full refund, insufficient balance, and duplicate notifications.
@@ -70,10 +73,10 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 ## Current continuation point
 
 - Branch: `feature/mercado-pago-split-refunds`
-- Last completed commit: `90cc731 feat: wire encrypted seller OAuth callback`.
-- Next step: manually validate seller linking, then implement secure token retrieval in the consumer before sending `application_fee`.
+- Last completed commit: `90cc731 feat: wire encrypted seller OAuth callback` (working tree contains the next Split wiring).
+- Next step: run a test-account payment with `seller_id` and `marketplace_fee_cents`, then implement real refund execution.
 
-The OAuth client is wired to the optional manual flow, but it is not used by payment creation yet. Do not send `application_fee` with the global platform token; the seller OAuth token must be retrieved from secure storage and used by the payment gateway first.
+Payment creation now sends `application_fee` only when `seller_id` and the matching encrypted seller token are available. A global token is never used for a seller split.
 
 ## Manual OAuth test
 
@@ -84,4 +87,4 @@ The OAuth client is wired to the optional manual flow, but it is not used by pay
 5. Authorize the seller. The callback returns only `seller_id` and `status`; it must never return tokens.
 6. Confirm that the configured token file exists and contains encrypted data.
 
-This manual flow verifies seller linking only. It does not yet create a Split payment or distribute money.
+After seller linking, create a payment with `seller_id` and `marketplace_fee_cents` to test Split using Mercado Pago test accounts. The token file must be mounted at the same path in both Docker services.

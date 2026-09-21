@@ -10,9 +10,11 @@ INSERT INTO payment_requests (
     failure_message,
     stripe_payment_intent_id,
     gateway,
-    gateway_payment_id
+    gateway_payment_id,
+    seller_id,
+    marketplace_fee_cents
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
 )
 ON CONFLICT (idempotency_key) DO NOTHING
 RETURNING uuid::text AS uuid, payment_method, status, created_at, updated_at;

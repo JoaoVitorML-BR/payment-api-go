@@ -39,6 +39,8 @@ type CreatePaymentRequest struct {
 	PaymentMethod         string        `json:"payment_method" binding:"required"`
 	StripePaymentMethodID string        `json:"stripe_payment_method_id,omitempty"`
 	Installments          *int          `json:"installments,omitempty"`
+	SellerID              string        `json:"seller_id,omitempty"`
+	MarketplaceFeeCents   int64         `json:"marketplace_fee_cents,omitempty"`
 	Customer              *CustomerInfo `json:"customer,omitempty"`
 }
 
@@ -99,6 +101,8 @@ func (h *PaymentHandler) CreatePaymentRequestHandler(c *gin.Context) {
 		PaymentMethod:         req.PaymentMethod,
 		StripePaymentMethodID: req.StripePaymentMethodID,
 		Installments:          req.Installments,
+		SellerID:              req.SellerID,
+		MarketplaceFeeCents:   req.MarketplaceFeeCents,
 		Customer:              req.Customer,
 	})
 	if err != nil {

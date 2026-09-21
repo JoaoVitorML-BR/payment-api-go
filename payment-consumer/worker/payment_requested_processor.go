@@ -85,20 +85,22 @@ func (p *PaymentRequestedProcessor) Handle(ctx context.Context, d amqp.Delivery)
 	metadata := buildPaymentMetadata(msg)
 	ctx = requestoptions.WithIdempotencyKey(ctx, msg.IdempotencyKey)
 	input := paymentgateway.CreatePaymentInput{
-		AmountCents:     msg.AmountCents,
-		Currency:        currency,
-		PaymentMethod:   strings.ToLower(strings.TrimSpace(msg.PaymentMethod)),
-		IdempotencyKey:  msg.IdempotencyKey,
-		Description:     fmt.Sprintf("consultoria online - %s", msg.PaymentID),
-		PayerEmail:      customerEmail(msg.Customer),
-		PayerName:       customerName(msg.Customer),
-		PayerTaxID:      customerTaxID(msg.Customer),
-		PayerAddress:    customerAddress(msg.Customer),
-		PayerCity:       customerCity(msg.Customer),
-		PayerState:      customerState(msg.Customer),
-		PayerPostalCode: customerPostalCode(msg.Customer),
-		Metadata:        metadata,
-		NotificationURL: p.cfg.MercadoPagoWebhookURL,
+		AmountCents:         msg.AmountCents,
+		Currency:            currency,
+		PaymentMethod:       strings.ToLower(strings.TrimSpace(msg.PaymentMethod)),
+		IdempotencyKey:      msg.IdempotencyKey,
+		Description:         fmt.Sprintf("consultoria online - %s", msg.PaymentID),
+		PayerEmail:          customerEmail(msg.Customer),
+		PayerName:           customerName(msg.Customer),
+		PayerTaxID:          customerTaxID(msg.Customer),
+		PayerAddress:        customerAddress(msg.Customer),
+		PayerCity:           customerCity(msg.Customer),
+		PayerState:          customerState(msg.Customer),
+		PayerPostalCode:     customerPostalCode(msg.Customer),
+		Metadata:            metadata,
+		NotificationURL:     p.cfg.MercadoPagoWebhookURL,
+		SellerID:            strings.TrimSpace(msg.SellerID),
+		MarketplaceFeeCents: msg.MarketplaceFeeCents,
 	}
 
 	paymentResult, gwErr := p.gateway.CreatePayment(ctx, input)
