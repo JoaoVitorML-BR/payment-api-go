@@ -60,6 +60,10 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 - Propagated `seller_id` and `marketplace_fee_cents` from the payment request through RabbitMQ to the consumer.
 - Added seller-token decryption in the consumer and sent `application_fee` only with the matching seller token.
 - Shared the encrypted token volume between Docker services.
+- Added real Mercado Pago full/partial refund execution through the SDK.
+- Added idempotent local refund reservation with cumulative amount protection.
+- Added `succeeded`, `partially_refunded`, and `refunded` state updates after gateway approval.
+- Added unit coverage for the successful refund path.
 
 ## Still required
 
@@ -68,13 +72,14 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 - Token renewal and application authentication around the OAuth start route for production use.
 - Real provider refund client and refund reconciliation webhook.
 - Atomic refund reservation and cumulative amount validation.
+- Recovery/reconciliation for refunds left in `processing` after a process or network failure.
 - Integration tests with Mercado Pago test accounts for split, partial/full refund, insufficient balance, and duplicate notifications.
 
 ## Current continuation point
 
 - Branch: `feature/mercado-pago-split-refunds`
-- Last completed commit: `9fbdbdd feat: create Mercado Pago split payments`.
-- Next step: run a test-account payment with `seller_id` and `marketplace_fee_cents`, then implement real refund execution.
+- Last completed commit: `521410f feat: execute Mercado Pago refunds`.
+- Next step: run manual test-account payment and refund scenarios, then add refund recovery/reconciliation.
 
 Payment creation now sends `application_fee` only when `seller_id` and the matching encrypted seller token are available. A global token is never used for a seller split.
 
@@ -90,3 +95,7 @@ Payment creation now sends `application_fee` only when `seller_id` and the match
 After seller linking, create a payment with `seller_id` and `marketplace_fee_cents` to test Split using Mercado Pago test accounts. The token file must be mounted at the same path in both Docker services.
 
 The current implementation supports one encrypted seller-token file for the manual test environment. A production marketplace must replace this with durable per-seller storage and token renewal before supporting multiple concurrent sellers.
+
+## Manual refund test
+
+Send `POST /payment/refund` with `payment_id`, `amount_cents`, `idempotency_key`, and a business `reason`. The consulting API owns the policy percentage; this payment API receives the already-authorized amount. A duplicate `idempotency_key` does not call the gateway again after local success. Mercado Pago may still require balance and may reject refunds after its provider limits.
