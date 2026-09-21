@@ -54,11 +54,14 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 - Removed sensitive webhook debug logs and rejected future timestamps.
 - Added a testable Mercado Pago OAuth client that builds the seller authorization URL and exchanges an authorization code for seller credentials.
 - Added OAuth tests for query parameters, form submission, incomplete responses, and secret non-disclosure.
+- Added an opt-in OAuth start/callback flow at `/oauth/mercadopago/start` and `/oauth/mercadopago/callback`.
+- Added AES-256-GCM encrypted file storage for seller credentials with restrictive file permissions.
+- Added one-time, ten-minute OAuth state validation to prevent callback replay and state reuse.
 
 ## Still required
 
-- Wire the OAuth client into an authenticated authorization/callback flow.
-- Add encrypted seller token storage and token renewal; never log or publish tokens.
+- Add application authentication/authorization around the OAuth start route for production use.
+- Add token renewal; never log or publish tokens.
 - `application_fee` in Mercado Pago payment creation.
 - Real provider refund client and refund reconciliation webhook.
 - Atomic refund reservation and cumulative amount validation.
@@ -67,7 +70,18 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 ## Current continuation point
 
 - Branch: `feature/mercado-pago-split-refunds`
-- Last completed commit: `5dc7be9 feat: prepare payment flow for split refunds`
-- Next step: implement seller OAuth authorization and encrypted token storage before sending `application_fee` to Mercado Pago.
+- Last completed commit: `90cc731 feat: wire encrypted seller OAuth callback`.
+- Next step: manually validate seller linking, then implement secure token retrieval in the consumer before sending `application_fee`.
 
-The OAuth client exists in `payment-request-api/internal/infra/paymentmercadopago/oauth.go`, but it is intentionally not wired into a route or payment creation yet. Do not send `application_fee` with the global platform token; the seller OAuth token and secure storage must exist first.
+The OAuth client is wired to the optional manual flow, but it is not used by payment creation yet. Do not send `application_fee` with the global platform token; the seller OAuth token must be retrieved from secure storage and used by the payment gateway first.
+
+## Manual OAuth test
+
+1. Set all optional OAuth variables from `payment-request-api/.env.example` in the local `.env`.
+2. Generate a 32-byte base64 key with PowerShell: `([Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)))`.
+3. Register the exact redirect URI in Mercado Pago: `http://localhost:8080/oauth/mercadopago/callback`.
+4. Start `payment-request-api` and open `http://localhost:8080/oauth/mercadopago/start`.
+5. Authorize the seller. The callback returns only `seller_id` and `status`; it must never return tokens.
+6. Confirm that the configured token file exists and contains encrypted data.
+
+This manual flow verifies seller linking only. It does not yet create a Split payment or distribute money.
