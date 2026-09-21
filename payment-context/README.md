@@ -67,6 +67,7 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 - Added refund recovery that lists local `processing` operations and matches already-approved gateway refunds before any new attempt.
 - Added row locking during refund reservation so concurrent refunds cannot exceed the original amount.
 - Added unit coverage for the recovery path.
+- Added `MANUAL_TESTING.md` with the complete manual test sequence and acceptance criteria.
 
 ## Still required
 
@@ -83,7 +84,8 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 
 - Branch: `feature/mercado-pago-split-refunds`
 - Last completed commit: `e801d1b feat: reconcile pending Mercado Pago refunds`.
-- Next step: run manual test-account payment/refund scenarios and verify recovery after a forced process interruption.
+- Documentation commit: `336785d docs: add manual payment testing guide`.
+- Next step: execute `MANUAL_TESTING.md` with Mercado Pago test accounts and record any provider-specific behavior.
 
 Payment creation now sends `application_fee` only when `seller_id` and the matching encrypted seller token are available. A global token is never used for a seller split.
 
