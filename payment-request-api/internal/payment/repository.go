@@ -43,6 +43,18 @@ func (r *PaymentRepositoryDB) MarkRefundFailed(ctx context.Context, idempotencyK
 	return r.queries.MarkRefundFailed(ctx, idempotencyKey, code, message)
 }
 
+func (r *PaymentRepositoryDB) ListProcessingRefunds(ctx context.Context, limit int32) ([]RefundRecord, error) {
+	rows, err := r.queries.ListProcessingRefunds(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]RefundRecord, len(rows))
+	for i, row := range rows {
+		result[i] = RefundRecord{PaymentID: row.PaymentID, IdempotencyKey: row.IdempotencyKey, AmountCents: row.AmountCents, Status: row.Status, GatewayRefundID: row.GatewayRefundID}
+	}
+	return result, nil
+}
+
 func (r *PaymentRepositoryDB) UpdatePaymentStatus(ctx context.Context, paymentUUID string, status string, amountCents int64) (int64, error) {
 	parsedUUID := parseStringToUUID(paymentUUID)
 

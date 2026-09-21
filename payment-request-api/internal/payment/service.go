@@ -56,6 +56,7 @@ type RefundRepository interface {
 	ReserveRefund(context.Context, string, string, int64, string) (RefundRecord, error)
 	MarkRefundSucceeded(context.Context, string, string) error
 	MarkRefundFailed(context.Context, string, string, string) error
+	ListProcessingRefunds(context.Context, int32) ([]RefundRecord, error)
 }
 
 type RefundPaymentInfo struct {
@@ -73,6 +74,7 @@ type RefundRecord struct {
 }
 type RefundGateway interface {
 	Refund(context.Context, string, string, int64) (string, error)
+	FindRefund(context.Context, string, string, int64) (string, bool, error)
 }
 
 type PaymentGatewayValidationData struct {
@@ -164,6 +166,32 @@ func (s *PaymentService) ProcessRefund(ctx context.Context, req RefundRequest) e
 		return fmt.Errorf("persist refund success: %w", err)
 	}
 	return nil
+}
+
+func (s *PaymentService) ReconcileProcessingRefunds(ctx context.Context, limit int32) (int, error) {
+	if s.refundRepo == nil || s.refundGateway == nil {
+		return 0, errors.New("refund flow is not configured")
+	}
+	items, err := s.refundRepo.ListProcessingRefunds(ctx, limit)
+	if err != nil {
+		return 0, fmt.Errorf("list processing refunds: %w", err)
+	}
+	reconciled := 0
+	for _, item := range items {
+		info, err := s.refundRepo.GetRefundPaymentInfo(ctx, item.PaymentID)
+		if err != nil {
+			continue
+		}
+		gatewayID, found, err := s.refundGateway.FindRefund(ctx, info.GatewayPaymentID, info.SellerID, item.AmountCents)
+		if err != nil || !found {
+			continue
+		}
+		if err := s.refundRepo.MarkRefundSucceeded(ctx, item.IdempotencyKey, gatewayID); err != nil {
+			return reconciled, fmt.Errorf("mark reconciled refund: %w", err)
+		}
+		reconciled++
+	}
+	return reconciled, nil
 }
 
 func NewPaymentService(repo PaymentRepository, publisher events.PaymentRequestedEventPublisher, gatewayReader GatewayPaymentReader) (*PaymentService, error) {

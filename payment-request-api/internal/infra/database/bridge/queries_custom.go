@@ -33,6 +33,24 @@ type RefundRecordRow struct {
 	GatewayRefundID string
 }
 
+func (q *Queries) ListProcessingRefunds(ctx context.Context, limit int32) ([]RefundRecordRow, error) {
+	const query = `SELECT payment_request_uuid::text, idempotency_key, amount_cents, status, COALESCE(gateway_refund_id, '') FROM payment_refunds WHERE status = 'processing' ORDER BY updated_at ASC LIMIT $1`
+	rows, err := q.db.Query(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []RefundRecordRow
+	for rows.Next() {
+		var row RefundRecordRow
+		if err := rows.Scan(&row.PaymentID, &row.IdempotencyKey, &row.AmountCents, &row.Status, &row.GatewayRefundID); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
 func (q *Queries) ReserveRefund(ctx context.Context, paymentID, idempotencyKey string, amountCents int64, reason string) (RefundRecordRow, error) {
 	const existing = `SELECT payment_request_uuid::text, idempotency_key, amount_cents, status, COALESCE(gateway_refund_id, '') FROM payment_refunds WHERE idempotency_key = $1`
 	var record RefundRecordRow
@@ -45,7 +63,7 @@ WITH totals AS (
   SELECT COALESCE(SUM(amount_cents) FILTER (WHERE status IN ('requested', 'processing', 'succeeded')), 0)::bigint AS refunded
   FROM payment_refunds WHERE payment_request_uuid = $1::uuid
 ), payment AS (
-  SELECT amount_cents, status FROM payment_requests WHERE uuid = $1::uuid
+	SELECT amount_cents, status FROM payment_requests WHERE uuid = $1::uuid FOR UPDATE
 )
 INSERT INTO payment_refunds (payment_request_uuid, idempotency_key, amount_cents, reason, status)
 SELECT $1::uuid, $2, $3, $4, 'processing'
