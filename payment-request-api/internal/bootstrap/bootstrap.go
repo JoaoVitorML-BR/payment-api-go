@@ -52,6 +52,14 @@ func NewRouter(cfg *config.Config) *gin.Engine {
 	if err != nil {
 		panic("Failed to initialize payment service")
 	}
+	var tokenStore *paymentmercadopago.EncryptedFileTokenStore
+	if cfg.MercadoPagoOAuthClientID != "" {
+		tokenStore, err = paymentmercadopago.NewEncryptedFileTokenStore(cfg.MercadoPagoOAuthTokenFile, cfg.MercadoPagoOAuthEncryptionKey)
+		if err != nil {
+			panic("Failed to initialize refund token store")
+		}
+	}
+	paymentService.SetRefundDependencies(paymentRepository, paymentmercadopago.NewRefundClient(mpAccessToken, tokenStore))
 	paymentHandler, err := handler.NewPaymentHandler(paymentService, cfg)
 	if err != nil {
 		panic("Failed to initialize payment handler")

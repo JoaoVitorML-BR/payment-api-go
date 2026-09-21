@@ -17,6 +17,40 @@ import (
 
 type SellerTokenStore interface {
 	Save(userID string, token OAuthToken) error
+	Load(userID string) (OAuthToken, error)
+}
+
+func (s *EncryptedFileTokenStore) Load(userID string) (OAuthToken, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	encoded, err := os.ReadFile(s.path)
+	if err != nil {
+		return OAuthToken{}, fmt.Errorf("read encrypted OAuth credentials: %w", err)
+	}
+	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(encoded)))
+	if err != nil {
+		return OAuthToken{}, fmt.Errorf("decode encrypted OAuth credentials: %w", err)
+	}
+	block, err := aes.NewCipher(s.key)
+	if err != nil {
+		return OAuthToken{}, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil || len(data) < gcm.NonceSize() {
+		return OAuthToken{}, errors.New("encrypted OAuth credentials are invalid")
+	}
+	plain, err := gcm.Open(nil, data[:gcm.NonceSize()], data[gcm.NonceSize():], nil)
+	if err != nil {
+		return OAuthToken{}, errors.New("encrypted OAuth credentials could not be decrypted")
+	}
+	var stored struct {
+		UserID string     `json:"user_id"`
+		Token  OAuthToken `json:"token"`
+	}
+	if err := json.Unmarshal(plain, &stored); err != nil || stored.UserID != userID || stored.Token.UserID != userID || stored.Token.AccessToken == "" {
+		return OAuthToken{}, errors.New("stored OAuth credentials do not match seller")
+	}
+	return stored.Token, nil
 }
 
 type EncryptedFileTokenStore struct {

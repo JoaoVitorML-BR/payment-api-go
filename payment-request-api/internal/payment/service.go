@@ -51,6 +51,30 @@ type PaymentRepository interface {
 	GetPendingPaymentsForReconciliation(ctx context.Context, maxUpdatedAt time.Time, limit int32) ([]ReconciliationItem, error)
 }
 
+type RefundRepository interface {
+	GetRefundPaymentInfo(context.Context, string) (RefundPaymentInfo, error)
+	ReserveRefund(context.Context, string, string, int64, string) (RefundRecord, error)
+	MarkRefundSucceeded(context.Context, string, string) error
+	MarkRefundFailed(context.Context, string, string, string) error
+}
+
+type RefundPaymentInfo struct {
+	GatewayPaymentID string
+	AmountCents      int64
+	Status           string
+	SellerID         string
+}
+type RefundRecord struct {
+	PaymentID       string
+	IdempotencyKey  string
+	AmountCents     int64
+	Status          string
+	GatewayRefundID string
+}
+type RefundGateway interface {
+	Refund(context.Context, string, string, int64) (string, error)
+}
+
 type PaymentGatewayValidationData struct {
 	PaymentUUID      string
 	ExpectedAmount   int64
@@ -79,12 +103,21 @@ type PaymentService struct {
 	repo          PaymentRepository
 	publisher     events.PaymentRequestedEventPublisher
 	gatewayReader GatewayPaymentReader
+	refundRepo    RefundRepository
+	refundGateway RefundGateway
 }
 
 type RefundRequest struct {
-	PaymentID   string `json:"payment_id"`
-	AmountCents int64  `json:"amount_cents"` // Partial or full refund in cents
-	SplitRule   string `json:"split_rule"`   // Optionally specify '50/50'
+	PaymentID      string `json:"payment_id"`
+	AmountCents    int64  `json:"amount_cents"` // Partial or full refund in cents
+	SplitRule      string `json:"split_rule"`   // Optionally specify '50/50'
+	IdempotencyKey string `json:"idempotency_key"`
+	Reason         string `json:"reason"`
+}
+
+func (s *PaymentService) SetRefundDependencies(repo RefundRepository, gateway RefundGateway) {
+	s.refundRepo = repo
+	s.refundGateway = gateway
 }
 
 func (s *PaymentService) ProcessRefund(ctx context.Context, req RefundRequest) error {
@@ -99,7 +132,38 @@ func (s *PaymentService) ProcessRefund(ctx context.Context, req RefundRequest) e
 		return errors.New("split_rule is not supported; refund allocation must come from the consulting service")
 	}
 
-	return errors.New("refund flow is not available until a gateway refund operation is configured")
+	if strings.TrimSpace(req.IdempotencyKey) == "" {
+		return errors.New("idempotency_key is required")
+	}
+	if s.refundRepo == nil || s.refundGateway == nil {
+		return errors.New("refund flow is not configured")
+	}
+	info, err := s.refundRepo.GetRefundPaymentInfo(ctx, req.PaymentID)
+	if err != nil {
+		return fmt.Errorf("get payment for refund: %w", err)
+	}
+	if info.Status != "succeeded" && info.Status != "partially_refunded" {
+		return fmt.Errorf("payment status %q cannot be refunded", info.Status)
+	}
+	if req.AmountCents > info.AmountCents {
+		return errors.New("refund amount exceeds original payment")
+	}
+	reservation, err := s.refundRepo.ReserveRefund(ctx, req.PaymentID, req.IdempotencyKey, req.AmountCents, req.Reason)
+	if err != nil {
+		return fmt.Errorf("reserve refund: %w", err)
+	}
+	if reservation.Status == "succeeded" {
+		return nil
+	}
+	gatewayRefundID, err := s.refundGateway.Refund(ctx, info.GatewayPaymentID, info.SellerID, req.AmountCents)
+	if err != nil {
+		_ = s.refundRepo.MarkRefundFailed(ctx, req.IdempotencyKey, "gateway_refund_failed", err.Error())
+		return fmt.Errorf("execute gateway refund: %w", err)
+	}
+	if err := s.refundRepo.MarkRefundSucceeded(ctx, req.IdempotencyKey, gatewayRefundID); err != nil {
+		return fmt.Errorf("persist refund success: %w", err)
+	}
+	return nil
 }
 
 func NewPaymentService(repo PaymentRepository, publisher events.PaymentRequestedEventPublisher, gatewayReader GatewayPaymentReader) (*PaymentService, error) {

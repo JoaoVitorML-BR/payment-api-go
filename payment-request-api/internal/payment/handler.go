@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"encoding/json"
@@ -64,7 +65,11 @@ func (h *PaymentHandler) RefundHandler(c *gin.Context) {
 	}
 
 	if err := h.service.ProcessRefund(c.Request.Context(), req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "cannot be refunded") || strings.Contains(err.Error(), "exceeds") {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 

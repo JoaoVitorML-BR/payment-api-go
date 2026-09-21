@@ -19,6 +19,30 @@ type PaymentRepositoryDB struct {
 	queries *dbbridge.Queries
 }
 
+func (r *PaymentRepositoryDB) GetRefundPaymentInfo(ctx context.Context, paymentID string) (RefundPaymentInfo, error) {
+	row, err := r.queries.GetRefundPaymentInfo(ctx, paymentID)
+	if err != nil {
+		return RefundPaymentInfo{}, err
+	}
+	return RefundPaymentInfo{GatewayPaymentID: row.GatewayPaymentID, AmountCents: row.AmountCents, Status: row.Status, SellerID: row.SellerID}, nil
+}
+
+func (r *PaymentRepositoryDB) ReserveRefund(ctx context.Context, paymentID, idempotencyKey string, amountCents int64, reason string) (RefundRecord, error) {
+	row, err := r.queries.ReserveRefund(ctx, paymentID, idempotencyKey, amountCents, reason)
+	if err != nil {
+		return RefundRecord{}, err
+	}
+	return RefundRecord{PaymentID: row.PaymentID, IdempotencyKey: row.IdempotencyKey, AmountCents: row.AmountCents, Status: row.Status, GatewayRefundID: row.GatewayRefundID}, nil
+}
+
+func (r *PaymentRepositoryDB) MarkRefundSucceeded(ctx context.Context, idempotencyKey, gatewayRefundID string) error {
+	return r.queries.MarkRefundSucceeded(ctx, idempotencyKey, gatewayRefundID)
+}
+
+func (r *PaymentRepositoryDB) MarkRefundFailed(ctx context.Context, idempotencyKey, code, message string) error {
+	return r.queries.MarkRefundFailed(ctx, idempotencyKey, code, message)
+}
+
 func (r *PaymentRepositoryDB) UpdatePaymentStatus(ctx context.Context, paymentUUID string, status string, amountCents int64) (int64, error) {
 	parsedUUID := parseStringToUUID(paymentUUID)
 
