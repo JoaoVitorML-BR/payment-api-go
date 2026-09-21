@@ -73,7 +73,7 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 ## Current continuation point
 
 - Branch: `feature/mercado-pago-split-refunds`
-- Last completed commit: `90cc731 feat: wire encrypted seller OAuth callback` (working tree contains the next Split wiring).
+- Last completed commit: `9fbdbdd feat: create Mercado Pago split payments`.
 - Next step: run a test-account payment with `seller_id` and `marketplace_fee_cents`, then implement real refund execution.
 
 Payment creation now sends `application_fee` only when `seller_id` and the matching encrypted seller token are available. A global token is never used for a seller split.
@@ -88,3 +88,5 @@ Payment creation now sends `application_fee` only when `seller_id` and the match
 6. Confirm that the configured token file exists and contains encrypted data.
 
 After seller linking, create a payment with `seller_id` and `marketplace_fee_cents` to test Split using Mercado Pago test accounts. The token file must be mounted at the same path in both Docker services.
+
+The current implementation supports one encrypted seller-token file for the manual test environment. A production marketplace must replace this with durable per-seller storage and token renewal before supporting multiple concurrent sellers.
