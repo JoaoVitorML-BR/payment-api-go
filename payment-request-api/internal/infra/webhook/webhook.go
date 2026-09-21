@@ -17,10 +17,6 @@ const maxSignatureAge = 5 * time.Minute
 
 func VerifySignature(signatureHeader string, requestID string, dataID string, now time.Time) error {
 
-	fmt.Printf("X-Signature recebido: %q\n", signatureHeader)
-	fmt.Printf("X-Request-Id recebido: %q\n", requestID)
-	fmt.Printf("dataID recebido: %q\n", dataID)
-
 	secret := os.Getenv("MERCADO_PAGO_WEBHOOK_SECRET")
 	if strings.TrimSpace(secret) == "" {
 		return errors.New("mercado pago webhook secret is not configured")
@@ -37,7 +33,8 @@ func VerifySignature(signatureHeader string, requestID string, dataID string, no
 	}
 
 	tsTime := time.Unix(ts, 0).UTC()
-	if now.UTC().Sub(tsTime) > maxSignatureAge {
+	age := now.UTC().Sub(tsTime)
+	if age < 0 || age > maxSignatureAge {
 		return errors.New("webhook signature expired")
 	}
 
@@ -59,13 +56,6 @@ func VerifySignature(signatureHeader string, requestID string, dataID string, no
 
 	expectedSignature := hex.EncodeToString(h.Sum(nil))
 	received := strings.ToLower(parts["v1"])
-
-	fmt.Printf(
-		"manifest: %s | expectedSignature: %s | received: %s\n",
-		manifest,
-		expectedSignature,
-		received,
-	)
 
 	if !hmac.Equal([]byte(expectedSignature), []byte(received)) {
 		return errors.New("invalid signature")

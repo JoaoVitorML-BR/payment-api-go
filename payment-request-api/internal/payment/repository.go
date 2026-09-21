@@ -140,6 +140,7 @@ func (r *PaymentRepositoryDB) CreatePaymentRequest(ctx context.Context, req Crea
 				Status:        existing.Status,
 				CreatedAt:     existing.CreatedAt.Time,
 				UpdatedAt:     existing.UpdatedAt.Time,
+				Created:       false,
 			}, nil
 		}
 		return CreatePaymentResponse{}, err
@@ -151,6 +152,7 @@ func (r *PaymentRepositoryDB) CreatePaymentRequest(ctx context.Context, req Crea
 		Status:        row.Status,
 		CreatedAt:     row.CreatedAt.Time,
 		UpdatedAt:     row.UpdatedAt.Time,
+		Created:       true,
 	}, nil
 }
 

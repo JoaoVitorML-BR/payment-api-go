@@ -71,10 +71,9 @@ const updatePaymentStatusByUUID = `-- name: UpdatePaymentStatusByUUID :execrows
   UPDATE payment_requests
   	SET 
 		status = $1, 
-		amount_cents = $2,
 		updated_at = NOW()
-  	WHERE uuid = $3::uuid
-		AND status NOT IN ('succeeded', 'failed', 'canceled')
+	  WHERE uuid = $2::uuid
+		AND status NOT IN ('failed', 'canceled', 'refunded', 'partially_refunded')
 `
 
 type UpdatePaymentStatusByUUIDParams struct {
@@ -91,7 +90,6 @@ func (q *Queries) UpdatePaymentStatusByUUID(
 		ctx,
 		updatePaymentStatusByUUID,
 		arg.Status,
-		arg.AmountCents,
 		arg.Uuid,
 	)
 

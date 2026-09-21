@@ -18,6 +18,7 @@ type CreatePaymentResponse struct {
 	Status        string    `json:"status"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+	Created       bool      `json:"-"`
 }
 
 type PaymentStatusResponse struct {
@@ -87,28 +88,18 @@ type RefundRequest struct {
 }
 
 func (s *PaymentService) ProcessRefund(ctx context.Context, req RefundRequest) error {
-	if req.PaymentID == "" {
+	if strings.TrimSpace(req.PaymentID) == "" {
 		return errors.New("missing payment ID")
 	}
 
 	if req.AmountCents <= 0 {
 		return errors.New("amount_cents must be positive")
 	}
-
-	refundCents := req.AmountCents
-	if req.SplitRule == "50/50" {
-		refundCents = req.AmountCents / 2 // Handle proportional refunds
+	if strings.TrimSpace(req.SplitRule) != "" {
+		return errors.New("split_rule is not supported; refund allocation must come from the consulting service")
 	}
 
-	rowsAffected, err := s.repo.UpdatePaymentStatus(ctx, req.PaymentID, "refunded", refundCents)
-	if err != nil {
-		return err
-	}
-	if rowsAffected == 0 {
-		log.Printf("[INFO] Refund for payment %s had no effect on DB status; likely in terminal state", req.PaymentID)
-	}
-
-	return nil
+	return errors.New("refund flow is not available until a gateway refund operation is configured")
 }
 
 func NewPaymentService(repo PaymentRepository, publisher events.PaymentRequestedEventPublisher, gatewayReader GatewayPaymentReader) (*PaymentService, error) {
@@ -258,8 +249,10 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req CreatePaymentReq
 	}
 
 	// Publish the payment requested event
-	if err := s.publishPaymentRequestedEvent(req, resp); err != nil {
-		return CreatePaymentResponse{}, err
+	if resp.Created {
+		if err := s.publishPaymentRequestedEvent(req, resp); err != nil {
+			return CreatePaymentResponse{}, err
+		}
 	}
 
 	return resp, nil

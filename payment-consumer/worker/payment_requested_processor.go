@@ -254,7 +254,7 @@ func updatePaymentRequestSuccess(ctx context.Context, queries PaymentQueries, pa
 		Uuid:             parsedUUID,
 		Gateway:          "mercado_pago",
 		GatewayPaymentID: pgtype.Text{String: result.GatewayPaymentID, Valid: true},
-		Status:           string(result.Status),
+		Status:           paymentRequestStatus(result.Status),
 	}); err != nil {
 		log.Printf("[ERROR] UpdatePaymentRequestSuccess failed: %v", err)
 		return fmt.Errorf("update payment request success: %w", err)
@@ -262,6 +262,13 @@ func updatePaymentRequestSuccess(ctx context.Context, queries PaymentQueries, pa
 
 	log.Printf("[SUCCESS] Payment %s processed and payment_requests updated successfully", paymentID)
 	return nil
+}
+
+func paymentRequestStatus(status paymentgateway.PaymentStatus) string {
+	if status == paymentgateway.StatusApproved {
+		return "succeeded"
+	}
+	return string(status)
 }
 
 func customerName(customer *CustomerInfo) string {
