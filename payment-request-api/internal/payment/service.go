@@ -82,6 +82,7 @@ type PaymentGatewayValidationData struct {
 	ExpectedAmount   int64
 	ExpectedCurrency string
 	CurrentStatus    string
+	SellerID         string
 }
 
 type GatewayPaymentDetails struct {
@@ -93,7 +94,7 @@ type GatewayPaymentDetails struct {
 }
 
 type GatewayPaymentReader interface {
-	GetPayment(ctx context.Context, gatewayPaymentID string) (*GatewayPaymentDetails, error)
+	GetPayment(ctx context.Context, gatewayPaymentID string, sellerID string) (*GatewayPaymentDetails, error)
 }
 
 var (
@@ -234,7 +235,7 @@ func (s *PaymentService) ProcessMercadoPagoWebhook(ctx context.Context, gatewayP
 		return fmt.Errorf("%w: local payment not linked yet", ErrWebhookRetryable)
 	}
 
-	gatewayPayment, err := s.gatewayReader.GetPayment(ctx, gatewayPaymentID)
+	gatewayPayment, err := s.gatewayReader.GetPayment(ctx, gatewayPaymentID, localPayment.SellerID)
 	if err != nil {
 		return fmt.Errorf("%w: failed to fetch payment from Mercado Pago: %v", ErrWebhookRetryable, err)
 	}

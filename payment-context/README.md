@@ -86,7 +86,7 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 - Branch: `feature/mercado-pago-split-refunds`
 - Last completed commit: `e801d1b feat: reconcile pending Mercado Pago refunds`.
 - Documentation commit: `336785d docs: add manual payment testing guide`.
-- Next step: migrate `payment-request-api` gateway reader and refund client from Payments API IDs/endpoints to Orders API IDs/endpoints, then run the Orders manual tests.
+- Next step: add application authentication/authorization around the OAuth start route.
 
 Payment creation now sends `application_fee` only when `seller_id` and the matching encrypted seller token are available. A global token is never used for a seller split.
 

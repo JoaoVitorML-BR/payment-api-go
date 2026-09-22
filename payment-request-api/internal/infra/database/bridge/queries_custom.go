@@ -101,7 +101,7 @@ func (q *Queries) MarkRefundFailed(ctx context.Context, idempotencyKey, code, me
 }
 
 const getPaymentRequestByGatewayPaymentID = `-- name: GetPaymentRequestByGatewayPaymentID :one
-SELECT uuid::text AS uuid, amount_cents, currency, status
+SELECT uuid::text AS uuid, amount_cents, currency, status, COALESCE(seller_id, '')
 FROM payment_requests
 WHERE gateway_payment_id = $1
 LIMIT 1
@@ -112,6 +112,7 @@ type GetPaymentRequestByGatewayPaymentIDRow struct {
 	AmountCents int64
 	Currency    string
 	Status      string
+	SellerID    string
 }
 
 func (q *Queries) GetPaymentRequestByGatewayPaymentID(ctx context.Context, gatewayPaymentID string) (GetPaymentRequestByGatewayPaymentIDRow, error) {
@@ -122,6 +123,7 @@ func (q *Queries) GetPaymentRequestByGatewayPaymentID(ctx context.Context, gatew
 		&i.AmountCents,
 		&i.Currency,
 		&i.Status,
+		&i.SellerID,
 	)
 	return i, err
 }

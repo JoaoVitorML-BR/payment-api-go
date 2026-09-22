@@ -7,7 +7,8 @@ import (
 	"strings"
 
 	"github.com/mercadopago/sdk-go/pkg/config"
-	"github.com/mercadopago/sdk-go/pkg/refund"
+	"github.com/mercadopago/sdk-go/pkg/order"
+	"github.com/mercadopago/sdk-go/pkg/requestoptions"
 )
 
 type RefundClient struct {
@@ -24,19 +25,26 @@ func (c *RefundClient) Refund(ctx context.Context, gatewayPaymentID, sellerID st
 	if err != nil {
 		return "", err
 	}
-	var result *refund.Response
-	if amountCents > 0 {
-		result, err = client.CreatePartialRefund(ctx, id, float64(amountCents)/100)
-	} else {
-		result, err = client.Create(ctx, id)
-	}
+	result, err := client.Get(ctx, id)
 	if err != nil {
-		return "", fmt.Errorf("create Mercado Pago refund: %w", err)
+		return "", fmt.Errorf("get Mercado Pago order for refund: %w", err)
 	}
-	if result == nil || result.ID <= 0 || !strings.EqualFold(result.Status, "approved") {
-		return "", fmt.Errorf("Mercado Pago refund was not approved")
+	if result == nil || len(result.Transactions.Payments) == 0 {
+		return "", fmt.Errorf("Mercado Pago order has no payment transaction")
 	}
-	return strconv.Itoa(result.ID), nil
+	transactionID := result.Transactions.Payments[0].ID
+	var request *order.RefundRequest
+	if amountCents > 0 {
+		request = &order.RefundRequest{Transactions: []order.RefundTransaction{{ID: transactionID, Amount: fmt.Sprintf("%.2f", float64(amountCents)/100)}}}
+	}
+	refundResult, err := client.Refund(requestoptions.WithIdempotencyKey(ctx, fmt.Sprintf("refund-%s-%d", gatewayPaymentID, amountCents)), id, request)
+	if err != nil {
+		return "", fmt.Errorf("create Mercado Pago order refund: %w", err)
+	}
+	if refundResult == nil || len(refundResult.Transactions.Refunds) == 0 {
+		return "", fmt.Errorf("Mercado Pago order refund was not confirmed")
+	}
+	return refundResult.Transactions.Refunds[0].ID, nil
 }
 
 func (c *RefundClient) FindRefund(ctx context.Context, gatewayPaymentID, sellerID string, amountCents int64) (string, bool, error) {
@@ -44,40 +52,41 @@ func (c *RefundClient) FindRefund(ctx context.Context, gatewayPaymentID, sellerI
 	if err != nil {
 		return "", false, err
 	}
-	items, err := client.List(ctx, id)
+	result, err := client.Get(ctx, id)
 	if err != nil {
-		return "", false, fmt.Errorf("list Mercado Pago refunds: %w", err)
+		return "", false, fmt.Errorf("get Mercado Pago order refunds: %w", err)
 	}
-	for _, item := range items {
-		if item.ID > 0 && strings.EqualFold(item.Status, "approved") && int64(item.Amount*100+0.5) == amountCents {
-			return strconv.Itoa(item.ID), true, nil
+	for _, item := range result.Transactions.Refunds {
+		value, parseErr := strconv.ParseFloat(item.Amount, 64)
+		if item.ID != "" && strings.EqualFold(item.Status, "processed") && parseErr == nil && int64(value*100+0.5) == amountCents {
+			return item.ID, true, nil
 		}
 	}
 	return "", false, nil
 }
 
-func (c *RefundClient) client(ctx context.Context, gatewayPaymentID, sellerID string) (refund.Client, int, error) {
-	id, err := strconv.Atoi(strings.TrimSpace(gatewayPaymentID))
-	if err != nil || id <= 0 {
-		return nil, 0, fmt.Errorf("invalid Mercado Pago payment id %q", gatewayPaymentID)
+func (c *RefundClient) client(ctx context.Context, gatewayPaymentID, sellerID string) (order.Client, string, error) {
+	id := strings.TrimSpace(gatewayPaymentID)
+	if id == "" {
+		return nil, "", fmt.Errorf("invalid Mercado Pago order id %q", gatewayPaymentID)
 	}
 	accessToken := c.accessToken
 	if strings.TrimSpace(sellerID) != "" {
 		if c.store == nil {
-			return nil, 0, fmt.Errorf("seller token store is not configured")
+			return nil, "", fmt.Errorf("seller token store is not configured")
 		}
 		token, err := c.store.Load(sellerID)
 		if err != nil {
-			return nil, 0, err
+			return nil, "", err
 		}
 		accessToken = token.AccessToken
 	}
 	if accessToken == "" {
-		return nil, 0, fmt.Errorf("Mercado Pago access token is not configured")
+		return nil, "", fmt.Errorf("Mercado Pago access token is not configured")
 	}
 	cfg, err := config.New(accessToken)
 	if err != nil {
-		return nil, 0, err
+		return nil, "", err
 	}
-	return refund.NewClient(cfg), id, nil
+	return order.NewClient(cfg), id, nil
 }

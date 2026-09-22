@@ -115,6 +115,7 @@ func (r *PaymentRepositoryDB) GetPaymentRequestByGatewayPaymentID(ctx context.Co
 		ExpectedAmount:   row.AmountCents,
 		ExpectedCurrency: row.Currency,
 		CurrentStatus:    row.Status,
+		SellerID:         row.SellerID,
 	}, nil
 }
 

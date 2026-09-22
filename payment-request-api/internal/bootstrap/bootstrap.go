@@ -46,18 +46,18 @@ func NewRouter(cfg *config.Config) *gin.Engine {
 	if mpAccessToken == "" {
 		log.Fatal("MERCADO_PAGO_ACCESS_TOKEN is required for webhook validation")
 	}
-	gatewayReader := paymentmercadopago.NewGatewayReader(mpAccessToken)
-
-	paymentService, err := handler.NewPaymentService(paymentRepository, publisher, gatewayReader)
-	if err != nil {
-		panic("Failed to initialize payment service")
-	}
 	var tokenStore *paymentmercadopago.EncryptedFileTokenStore
 	if cfg.MercadoPagoOAuthClientID != "" {
 		tokenStore, err = paymentmercadopago.NewEncryptedFileTokenStore(cfg.MercadoPagoOAuthTokenFile, cfg.MercadoPagoOAuthEncryptionKey)
 		if err != nil {
-			panic("Failed to initialize refund token store")
+			panic("Failed to initialize Orders token store")
 		}
+	}
+	gatewayReader := paymentmercadopago.NewGatewayReader(mpAccessToken, tokenStore)
+
+	paymentService, err := handler.NewPaymentService(paymentRepository, publisher, gatewayReader)
+	if err != nil {
+		panic("Failed to initialize payment service")
 	}
 	paymentService.SetRefundDependencies(paymentRepository, paymentmercadopago.NewRefundClient(mpAccessToken, tokenStore))
 	paymentHandler, err := handler.NewPaymentHandler(paymentService, cfg)
@@ -73,13 +73,6 @@ func NewRouter(cfg *config.Config) *gin.Engine {
 		)
 		if oauthErr != nil {
 			panic("Failed to initialize Mercado Pago OAuth client")
-		}
-		tokenStore, storeErr := paymentmercadopago.NewEncryptedFileTokenStore(
-			cfg.MercadoPagoOAuthTokenFile,
-			cfg.MercadoPagoOAuthEncryptionKey,
-		)
-		if storeErr != nil {
-			panic("Failed to initialize encrypted OAuth token store")
 		}
 		oauthHandler, err = server.NewOAuthHandler(oauthClient, tokenStore, cfg.MercadoPagoOAuthRedirectURI)
 		if err != nil {

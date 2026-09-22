@@ -9,7 +9,12 @@ import (
 func normalizeGatewayStatus(gatewayStatus string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(gatewayStatus)) {
 
+	// Payments API legacy statuses
 	case "approved":
+		return "succeeded", nil
+
+	// Orders API transaction statuses
+	case "processed", "accredited":
 		return "succeeded", nil
 
 	case "cancelled", "canceled":

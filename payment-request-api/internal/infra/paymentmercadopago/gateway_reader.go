@@ -11,98 +11,71 @@ package paymentmercadopago
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
-	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/payment"
-)
-
-const (
-	defaultBaseURL = "https://api.mercadopago.com"
-	getPaymentPath = "/v1/payments/%s"
-	httpTimeout    = 10 * time.Second
+	"github.com/mercadopago/sdk-go/pkg/config"
+	"github.com/mercadopago/sdk-go/pkg/order"
 )
 
 // GatewayReader queries Mercado Pago for the authoritative state of a payment.
 type GatewayReader struct {
 	baseURL string
 	token   string
-	http    *http.Client
+	store   *EncryptedFileTokenStore
 }
 
-func NewGatewayReader(accessToken string) *GatewayReader {
+func NewGatewayReader(accessToken string, store *EncryptedFileTokenStore) *GatewayReader {
 	return &GatewayReader{
-		baseURL: defaultBaseURL,
-		token:   accessToken,
-		http:    &http.Client{Timeout: httpTimeout},
+		token: accessToken,
+		store: store,
 	}
-}
-
-// rawPayment models only the fields we need from GET /v1/payments/{id}.
-type rawPayment struct {
-	ID                json.Number `json:"id"`
-	Status            string      `json:"status"`
-	StatusDetail      string      `json:"status_detail"`
-	ExternalReference string      `json:"external_reference"`
-	TransactionAmount float64     `json:"transaction_amount"`
-	CurrencyID        string      `json:"currency_id"`
 }
 
 // GetPayment fetches the payment by id and converts it to normalized details.
 // Returns *payment.GatewayPaymentDetails to satisfy the payment.GatewayPaymentReader interface.
-func (g *GatewayReader) GetPayment(ctx context.Context, gatewayPaymentID string) (*payment.GatewayPaymentDetails, error) {
+func (g *GatewayReader) GetPayment(ctx context.Context, gatewayPaymentID string, sellerID string) (*payment.GatewayPaymentDetails, error) {
 	id := strings.TrimSpace(gatewayPaymentID)
 	if id == "" {
 		return nil, fmt.Errorf("mercado pago: empty payment id")
 	}
-	if _, err := strconv.ParseInt(id, 10, 64); err != nil {
-		return nil, fmt.Errorf("mercado pago: invalid payment id %q", id)
+	accessToken := g.token
+	if strings.TrimSpace(sellerID) != "" {
+		if g.store == nil {
+			return nil, fmt.Errorf("mercado pago: seller token store is not configured")
+		}
+		token, err := g.store.Load(sellerID)
+		if err != nil {
+			return nil, fmt.Errorf("mercado pago: load seller token: %w", err)
+		}
+		accessToken = token.AccessToken
 	}
-
-	url := g.baseURL + fmt.Sprintf(getPaymentPath, id)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	sdkConfig, err := config.New(accessToken)
 	if err != nil {
-		return nil, fmt.Errorf("mercado pago: build request: %w", err)
+		return nil, fmt.Errorf("mercado pago: configure Orders reader: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+g.token)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := g.http.Do(req)
+	result, err := order.NewClient(sdkConfig).Get(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("mercado pago: get payment %s: %w", id, err)
+		return nil, fmt.Errorf("mercado pago: get order %s: %w", id, err)
 	}
-	defer resp.Body.Close()
-
-	switch {
-	case resp.StatusCode == http.StatusNotFound:
-		return nil, fmt.Errorf("mercado pago: payment %s not found (404)", id)
-	case resp.StatusCode >= 500:
-		return nil, fmt.Errorf("mercado pago: upstream error (status %d)", resp.StatusCode)
-	case resp.StatusCode != http.StatusOK:
-		return nil, fmt.Errorf("mercado pago: unexpected status %d", resp.StatusCode)
+	if result == nil || len(result.Transactions.Payments) == 0 {
+		return nil, fmt.Errorf("mercado pago: order %s has no payment transaction", id)
 	}
-
-	var raw rawPayment
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, fmt.Errorf("mercado pago: decode response: %w", err)
-	}
-
-	amountCents, err := floatToCents(raw.TransactionAmount)
+	transaction := result.Transactions.Payments[0]
+	amount, err := strconv.ParseFloat(transaction.Amount, 64)
 	if err != nil {
-		return nil, fmt.Errorf("mercado pago: invalid transaction_amount for payment %s: %w", id, err)
+		return nil, fmt.Errorf("mercado pago: invalid order amount: %w", err)
 	}
 
 	return &payment.GatewayPaymentDetails{
-		GatewayPaymentID:  raw.ID.String(),
-		ExternalReference: strings.TrimSpace(raw.ExternalReference),
-		Status:            strings.TrimSpace(raw.Status),
-		AmountCents:       amountCents,
-		Currency:          strings.TrimSpace(raw.CurrencyID),
+		GatewayPaymentID:  result.ID,
+		ExternalReference: strings.TrimSpace(result.ExternalReference),
+		Status:            strings.TrimSpace(transaction.Status),
+		AmountCents:       int64(math.Round(amount * 100)),
+		Currency:          strings.TrimSpace(result.Currency),
 	}, nil
 }
 
