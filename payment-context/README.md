@@ -68,6 +68,7 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 - Added row locking during refund reservation so concurrent refunds cannot exceed the original amount.
 - Added unit coverage for the recovery path.
 - Added `MANUAL_TESTING.md` with the complete manual test sequence and acceptance criteria.
+- Started the Orders API migration in `payment-consumer`: Pix creation and lookup now use `order.Client`, `processing_mode=automatic`, `transactions.payments`, and `marketplace_fee`.
 
 ## Still required
 
@@ -85,9 +86,11 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 - Branch: `feature/mercado-pago-split-refunds`
 - Last completed commit: `e801d1b feat: reconcile pending Mercado Pago refunds`.
 - Documentation commit: `336785d docs: add manual payment testing guide`.
-- Next step: execute `MANUAL_TESTING.md` with Mercado Pago test accounts and record any provider-specific behavior.
+- Next step: migrate `payment-request-api` gateway reader and refund client from Payments API IDs/endpoints to Orders API IDs/endpoints, then run the Orders manual tests.
 
 Payment creation now sends `application_fee` only when `seller_id` and the matching encrypted seller token are available. A global token is never used for a seller split.
+
+Orders API credential rule: test Public Key and test Access Token are separate from `MERCADO_PAGO_OAUTH_CLIENT_ID` and `MERCADO_PAGO_OAUTH_CLIENT_SECRET`. The OAuth pair belongs to the Marketplace/Split application, not to the marketplace User ID. If the panel does not show a Client Secret, the application was created as a regular Orders integration instead of through the Split 1:1 Marketplace/OAuth flow.
 
 ## Manual OAuth test
 
