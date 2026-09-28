@@ -2,14 +2,15 @@
 package payment
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
-
-	"encoding/json"
 
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/config"
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/infra/webhook"
@@ -62,6 +63,12 @@ func (h *PaymentHandler) RefundHandler(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if req.IdempotencyKey == "" {
+		req.IdempotencyKey = c.GetHeader("Idempotency-Key")
+		if req.IdempotencyKey == "" {
+			req.IdempotencyKey = c.GetHeader("X-Idempotency-Key")
+		}
 	}
 
 	if err := h.service.ProcessRefund(c.Request.Context(), req); err != nil {
@@ -156,6 +163,12 @@ func (h *PaymentHandler) MercadoPagoWebhookHandler(c *gin.Context) {
 
 	dataID := extractWebhookDataID(bodyBytes)
 	if dataID == "" {
+		dataID = strings.TrimSpace(c.Query("data.id"))
+		if dataID == "" {
+			dataID = strings.TrimSpace(c.Query("id"))
+		}
+	}
+	if dataID == "" {
 		// Malformed/unrecognized payloads are permanently rejected so that
 		// Mercado Pago does not keep retrying a message we can never process.
 		log.Printf("[WEBHOOK] rejected: missing data.id in payload")
@@ -195,15 +208,47 @@ func (h *PaymentHandler) MercadoPagoWebhookHandler(c *gin.Context) {
 const maxWebhookBodySize = 64 * 1024 // 64 KiB is far more than enough for MP notifications
 
 // extractWebhookDataID extracts the resource id from a Mercado Pago webhook
-// body without trusting any other field of the payload.
+// body without trusting any other field of the payload. It supports both string and numeric IDs,
+// nested in data.id or top-level id.
 func extractWebhookDataID(body []byte) string {
-	var event struct {
-		Data struct {
-			ID json.Number `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &event); err != nil {
+	if len(body) == 0 {
 		return ""
 	}
-	return event.Data.ID.String()
+
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return ""
+	}
+
+	// 1. Check data.id
+	if data, ok := raw["data"].(map[string]any); ok {
+		if id, exists := data["id"]; exists && id != nil {
+			switch v := id.(type) {
+			case string:
+				return strings.TrimSpace(v)
+			case float64:
+				return strconv.FormatInt(int64(v), 10)
+			case json.Number:
+				return v.String()
+			default:
+				return fmt.Sprintf("%v", v)
+			}
+		}
+	}
+
+	// 2. Fallback: check top-level id (e.g. {"id": ...})
+	if id, exists := raw["id"]; exists && id != nil {
+		switch v := id.(type) {
+		case string:
+			return strings.TrimSpace(v)
+		case float64:
+			return strconv.FormatInt(int64(v), 10)
+		case json.Number:
+			return v.String()
+		default:
+			return fmt.Sprintf("%v", v)
+		}
+	}
+
+	return ""
 }
