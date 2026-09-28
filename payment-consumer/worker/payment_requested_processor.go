@@ -139,18 +139,6 @@ func parsePaymentRequestedMessage(body []byte) (paymentRequestedMessage, error) 
 	return msg, nil
 }
 
-func hasSuccessfulAttempt(ctx context.Context, queries PaymentQueries, paymentID string) (bool, error) {
-	existingAttempt, err := queries.GetLatestPaymentAttempt(ctx, parseStringToUUID(paymentID))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil
-		}
-		return false, err
-	}
-
-	return existingAttempt.GatewayPaymentID.Valid && existingAttempt.Status != "failed", nil
-}
-
 func buildPaymentMetadata(msg paymentRequestedMessage) map[string]string {
 	metadata := map[string]string{
 		"payment_request_uuid": msg.PaymentID,

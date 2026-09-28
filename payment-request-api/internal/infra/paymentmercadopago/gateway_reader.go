@@ -24,9 +24,8 @@ import (
 
 // GatewayReader queries Mercado Pago for the authoritative state of a payment.
 type GatewayReader struct {
-	baseURL string
-	token   string
-	store   *EncryptedFileTokenStore
+	token string
+	store *EncryptedFileTokenStore
 }
 
 func NewGatewayReader(accessToken string, store *EncryptedFileTokenStore) *GatewayReader {
