@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -18,6 +19,31 @@ type OAuthToken struct {
 	UserID       string `json:"user_id"`
 	ExpiresIn    int64  `json:"expires_in"`
 	TokenType    string `json:"token_type"`
+}
+
+func (t *OAuthToken) UnmarshalJSON(data []byte) error {
+	type Alias OAuthToken
+	var aux struct {
+		Alias
+		UserID interface{} `json:"user_id"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	*t = OAuthToken(aux.Alias)
+	switch v := aux.UserID.(type) {
+	case string:
+		t.UserID = strings.TrimSpace(v)
+	case float64:
+		t.UserID = strconv.FormatInt(int64(v), 10)
+	case json.Number:
+		t.UserID = v.String()
+	case nil:
+		t.UserID = ""
+	default:
+		t.UserID = fmt.Sprintf("%v", v)
+	}
+	return nil
 }
 
 type OAuthClient struct {
@@ -83,6 +109,7 @@ func (c *OAuthClient) ExchangeCode(ctx context.Context, code, redirectURI string
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "Bearer "+c.clientSecret)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

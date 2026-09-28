@@ -56,3 +56,23 @@ func TestOAuthClientExchangeCode(t *testing.T) {
 		t.Fatal("token unexpectedly contains client secret")
 	}
 }
+
+func TestOAuthClientExchangeCodeNumericUserID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"APP_USR-test","refresh_token":"TG-test","user_id":202809963,"expires_in":15552000,"token_type":"bearer"}`))
+	}))
+	defer server.Close()
+
+	client, err := newOAuthClient("app", "secret", server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := client.ExchangeCode(context.Background(), "code-123", "https://example.test/callback")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token.AccessToken != "APP_USR-test" || token.RefreshToken != "TG-test" || token.UserID != "202809963" {
+		t.Fatalf("unexpected token: %+v", token)
+	}
+}
