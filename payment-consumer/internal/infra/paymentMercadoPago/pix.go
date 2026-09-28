@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/paymentgateway"
 	"github.com/mercadopago/sdk-go/pkg/config"
@@ -50,7 +49,10 @@ func (c *Client) CreatePayment(ctx context.Context, input paymentgateway.CreateP
 
 	amount := float64(input.AmountCents) / 100
 
-	expirationPix := time.Now().Add(30 * time.Minute).UTC().Truncate(time.Millisecond)
+	var marketplaceFee string
+	if input.MarketplaceFeeCents > 0 {
+		marketplaceFee = fmt.Sprintf("%.2f", float64(input.MarketplaceFeeCents)/100)
+	}
 
 	request := order.Request{
 		Type:              "online",
@@ -59,7 +61,8 @@ func (c *Client) CreatePayment(ctx context.Context, input paymentgateway.CreateP
 		Currency:          input.Currency,
 		Description:       input.Description,
 		ExternalReference: input.Metadata["payment_request_uuid"],
-		MarketPlaceFee:    fmt.Sprintf("%.2f", float64(input.MarketplaceFeeCents)/100),
+		MarketPlaceFee:    marketplaceFee,
+		ExpirationTime:    "PT30M",
 		Payer: &order.PayerRequest{
 			Email:     strings.TrimSpace(input.PayerEmail),
 			FirstName: firstName,
@@ -76,11 +79,9 @@ func (c *Client) CreatePayment(ctx context.Context, input paymentgateway.CreateP
 			},
 		},
 		Transactions: &order.TransactionRequest{Payments: []order.PaymentRequest{{
-			Amount:           fmt.Sprintf("%.2f", amount),
-			DateOfExpiration: expirationPix.Format(time.RFC3339),
-			PaymentMethod:    &order.PaymentMethodRequest{ID: "pix", Type: "pix"},
+			Amount:        fmt.Sprintf("%.2f", amount),
+			PaymentMethod: &order.PaymentMethodRequest{ID: "pix", Type: "bank_transfer"},
 		}}},
-		Config: &order.ConfigRequest{NotificationURL: input.NotificationURL},
 	}
 
 	result, err := client.Create(ctx, request)
@@ -102,20 +103,40 @@ func (c *Client) GetPayment(ctx context.Context, gatewayPaymentID string) (*paym
 }
 
 func toOrderPaymentResult(o *order.Response) *paymentgateway.PaymentResult {
-	if o == nil || len(o.Transactions.Payments) == 0 {
+	if o == nil {
 		return &paymentgateway.PaymentResult{Status: paymentgateway.StatusFailed, RawStatus: "invalid_order"}
+	}
+	if len(o.Transactions.Payments) == 0 {
+		return &paymentgateway.PaymentResult{
+			GatewayPaymentID:  o.ID,
+			Status:            normalizeOrderStatus(o.Status),
+			RawStatus:         o.Status,
+			Currency:          o.Currency,
+			RawResponse:       mustJSON(o),
+		}
 	}
 	p := o.Transactions.Payments[0]
 	amount, _ := strconv.ParseFloat(p.Amount, 64)
+	expiration := p.DateOfExpiration
+	if expiration == "" {
+		expiration = p.ExpirationTime
+	}
+	if expiration == "" {
+		expiration = o.ExpirationTime
+	}
+	status := p.Status
+	if strings.TrimSpace(status) == "" {
+		status = o.Status
+	}
 	return &paymentgateway.PaymentResult{
 		GatewayPaymentID:  o.ID,
-		Status:            normalizeOrderStatus(p.Status),
-		RawStatus:         p.Status,
+		Status:            normalizeOrderStatus(status),
+		RawStatus:         status,
 		AmountCents:       int64(amount * 100),
 		Currency:          o.Currency,
 		PixQRCode:         p.PaymentMethod.QrCode,
 		PixQRCodeBase64:   p.PaymentMethod.QrCodeBase64,
-		PixExpirationDate: p.DateOfExpiration,
+		PixExpirationDate: expiration,
 		RawResponse:       mustJSON(o),
 	}
 }
@@ -127,11 +148,11 @@ func mustJSON(value any) []byte {
 
 func normalizeOrderStatus(status string) paymentgateway.PaymentStatus {
 	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "processed", "accredited":
+	case "processed", "accredited", "approved", "paid":
 		return paymentgateway.StatusApproved
-	case "pending", "in_process":
+	case "pending", "in_process", "action_required", "created":
 		return paymentgateway.StatusPending
-	case "cancelled", "canceled", "rejected":
+	case "cancelled", "canceled", "rejected", "expired":
 		return paymentgateway.StatusRejected
 	default:
 		return paymentgateway.StatusFailed
