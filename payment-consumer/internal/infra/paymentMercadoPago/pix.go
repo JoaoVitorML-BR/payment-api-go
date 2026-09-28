@@ -54,15 +54,48 @@ func (c *Client) CreatePayment(ctx context.Context, input paymentgateway.CreateP
 		marketplaceFee = fmt.Sprintf("%.2f", float64(input.MarketplaceFeeCents)/100)
 	}
 
+	streetName := strings.TrimSpace(input.PayerAddress)
+	streetNumber := "S/N"
+	if streetName == "" {
+		streetName = "Não informado"
+	}
+	city := strings.TrimSpace(input.PayerCity)
+	if city == "" {
+		city = "São Paulo"
+	}
+	state := strings.TrimSpace(input.PayerState)
+	if state == "" {
+		state = "SP"
+	}
+	zipCode := strings.TrimSpace(input.PayerPostalCode)
+	if zipCode == "" {
+		zipCode = "01001-000"
+	}
+
+	title := strings.TrimSpace(input.Description)
+	if title == "" {
+		title = "Agendamento de Consultoria"
+	}
+
 	request := order.Request{
 		Type:              "online",
+		CaptureMode:       "automatic",
 		ProcessingMode:    "automatic",
 		TotalAmount:       fmt.Sprintf("%.2f", amount),
 		Currency:          input.Currency,
-		Description:       input.Description,
+		Description:       title,
 		ExternalReference: input.Metadata["payment_request_uuid"],
 		MarketPlaceFee:    marketplaceFee,
 		ExpirationTime:    "PT30M",
+		Items: []order.ItemsRequest{
+			{
+				Title:       title,
+				CategoryID:  "services",
+				Quantity:    1,
+				UnitPrice:   fmt.Sprintf("%.2f", amount),
+				Description: title,
+			},
+		},
 		Payer: &order.PayerRequest{
 			Email:     strings.TrimSpace(input.PayerEmail),
 			FirstName: firstName,
@@ -72,11 +105,15 @@ func (c *Client) CreatePayment(ctx context.Context, input paymentgateway.CreateP
 				Number: strings.TrimSpace(input.PayerTaxID),
 			},
 			Address: &order.PayerAddressRequest{
-				City:       strings.TrimSpace(input.PayerCity),
-				State:      strings.TrimSpace(input.PayerState),
-				ZipCode:    strings.TrimSpace(input.PayerPostalCode),
-				StreetName: strings.TrimSpace(input.PayerAddress),
+				StreetName:   streetName,
+				StreetNumber: streetNumber,
+				City:         city,
+				State:        state,
+				ZipCode:      zipCode,
 			},
+		},
+		Config: &order.ConfigRequest{
+			StatementDescriptor: "CONSULTORIA",
 		},
 		Transactions: &order.TransactionRequest{Payments: []order.PaymentRequest{{
 			Amount:        fmt.Sprintf("%.2f", amount),
