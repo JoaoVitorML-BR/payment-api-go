@@ -24,7 +24,13 @@ func (r *PaymentRepositoryDB) GetRefundPaymentInfo(ctx context.Context, paymentI
 	if err != nil {
 		return RefundPaymentInfo{}, err
 	}
-	return RefundPaymentInfo{GatewayPaymentID: row.GatewayPaymentID, AmountCents: row.AmountCents, Status: row.Status, SellerID: row.SellerID}, nil
+	return RefundPaymentInfo{
+		PaymentUUID:      row.PaymentUUID,
+		GatewayPaymentID: row.GatewayPaymentID,
+		AmountCents:      row.AmountCents,
+		Status:           row.Status,
+		SellerID:         row.SellerID,
+	}, nil
 }
 
 func (r *PaymentRepositoryDB) ReserveRefund(ctx context.Context, paymentID, idempotencyKey string, amountCents int64, reason string) (RefundRecord, error) {
