@@ -19,6 +19,7 @@ import (
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/payment"
 	"github.com/mercadopago/sdk-go/pkg/config"
 	"github.com/mercadopago/sdk-go/pkg/order"
+	mppayment "github.com/mercadopago/sdk-go/pkg/payment"
 )
 
 // GatewayReader queries Mercado Pago for the authoritative state of a payment.
@@ -57,6 +58,27 @@ func (g *GatewayReader) GetPayment(ctx context.Context, gatewayPaymentID string,
 	if err != nil {
 		return nil, fmt.Errorf("mercado pago: configure Orders reader: %w", err)
 	}
+
+	// Support legacy Payments API IDs (all digits) as well as new Orders API IDs
+	if numericID, err := strconv.ParseInt(id, 10, 64); err == nil && numericID > 0 {
+		payClient := mppayment.NewClient(sdkConfig)
+		payResult, payErr := payClient.Get(ctx, int(numericID))
+		if payErr != nil {
+			return nil, fmt.Errorf("mercado pago: get legacy payment %s: %w", id, payErr)
+		}
+		if payResult == nil {
+			return nil, fmt.Errorf("mercado pago: legacy payment %s not found", id)
+		}
+		cents, _ := floatToCents(payResult.TransactionAmount)
+		return &payment.GatewayPaymentDetails{
+			GatewayPaymentID:  strconv.Itoa(payResult.ID),
+			ExternalReference: strings.TrimSpace(payResult.ExternalReference),
+			Status:            strings.TrimSpace(payResult.Status),
+			AmountCents:       cents,
+			Currency:          strings.TrimSpace(payResult.CurrencyID),
+		}, nil
+	}
+
 	result, err := order.NewClient(sdkConfig).Get(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("mercado pago: get order %s: %w", id, err)
@@ -70,10 +92,15 @@ func (g *GatewayReader) GetPayment(ctx context.Context, gatewayPaymentID string,
 		return nil, fmt.Errorf("mercado pago: invalid order amount: %w", err)
 	}
 
+	status := transaction.Status
+	if strings.TrimSpace(status) == "" {
+		status = result.Status
+	}
+
 	return &payment.GatewayPaymentDetails{
 		GatewayPaymentID:  result.ID,
 		ExternalReference: strings.TrimSpace(result.ExternalReference),
-		Status:            strings.TrimSpace(transaction.Status),
+		Status:            strings.TrimSpace(status),
 		AmountCents:       int64(math.Round(amount * 100)),
 		Currency:          strings.TrimSpace(result.Currency),
 	}, nil
