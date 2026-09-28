@@ -117,7 +117,7 @@ func (c *Client) CreatePayment(ctx context.Context, input paymentgateway.CreateP
 		},
 		Transactions: &order.TransactionRequest{Payments: []order.PaymentRequest{{
 			Amount:        fmt.Sprintf("%.2f", amount),
-			PaymentMethod: &order.PaymentMethodRequest{ID: "pix", Type: "bank_transfer"},
+			PaymentMethod: &order.PaymentMethodRequest{ID: "pix"},
 		}}},
 	}
 
