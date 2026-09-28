@@ -34,7 +34,7 @@ func VerifySignature(signatureHeader string, requestID string, dataID string, no
 
 	tsTime := time.Unix(ts, 0).UTC()
 	age := now.UTC().Sub(tsTime)
-	if age < 0 || age > maxSignatureAge {
+	if age < -maxSignatureAge || age > maxSignatureAge {
 		return errors.New("webhook signature expired")
 	}
 

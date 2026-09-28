@@ -239,3 +239,66 @@ func (q *Queries) GetPendingPaymentsForReconciliation(ctx context.Context, maxUp
 	}
 	return items, nil
 }
+
+const getPaymentDetails = `-- name: GetPaymentDetails :one
+SELECT 
+    uuid::text,
+    idempotency_key,
+    COALESCE(merchant_reference, ''),
+    amount_cents,
+    currency,
+    payment_method,
+    COALESCE(installments, 1),
+    status,
+    COALESCE(failure_code, ''),
+    COALESCE(failure_message, ''),
+    COALESCE(gateway, 'mercado_pago'),
+    COALESCE(gateway_payment_id, ''),
+    COALESCE(seller_id, ''),
+    created_at,
+    updated_at
+FROM payment_requests
+WHERE (uuid::text = $1 OR gateway_payment_id = $1 OR idempotency_key = $1)
+LIMIT 1
+`
+
+type PaymentDetailsRow struct {
+	UUID              string
+	IdempotencyKey    string
+	MerchantReference string
+	AmountCents       int64
+	Currency          string
+	PaymentMethod     string
+	Installments      int32
+	Status            string
+	FailureCode       string
+	FailureMessage    string
+	Gateway           string
+	GatewayPaymentID  string
+	SellerID          string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+func (q *Queries) GetPaymentDetails(ctx context.Context, identifier string) (PaymentDetailsRow, error) {
+	row := q.db.QueryRow(ctx, getPaymentDetails, identifier)
+	var i PaymentDetailsRow
+	err := row.Scan(
+		&i.UUID,
+		&i.IdempotencyKey,
+		&i.MerchantReference,
+		&i.AmountCents,
+		&i.Currency,
+		&i.PaymentMethod,
+		&i.Installments,
+		&i.Status,
+		&i.FailureCode,
+		&i.FailureMessage,
+		&i.Gateway,
+		&i.GatewayPaymentID,
+		&i.SellerID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
