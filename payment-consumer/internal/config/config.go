@@ -12,17 +12,19 @@ import (
 )
 
 type Config struct {
-	Port                   string
-	DbHost                 string
-	DbPort                 string
-	DbUser                 string
-	DbPassword             string
-	DbName                 string
-	RabbitmqURI            string
-	RabbitmqQueue          string
-	MercadoPagoAccessToken string
-	MercadoPagoWebhookURL  string
-	PixExpirationTime      int
+	Port                          string
+	DbHost                        string
+	DbPort                        string
+	DbUser                        string
+	DbPassword                    string
+	DbName                        string
+	RabbitmqURI                   string
+	RabbitmqQueue                 string
+	MercadoPagoAccessToken        string
+	MercadoPagoWebhookURL         string
+	MercadoPagoOAuthTokenFile     string
+	MercadoPagoOAuthEncryptionKey string
+	PixExpirationTime             int
 }
 
 func LoadConfig() (*Config, error) {
@@ -82,6 +84,9 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("MERCADO_PAGO_WEBHOOK_URL is required")
 	}
 
+	mercadoPagoOAuthTokenFile := os.Getenv("MERCADO_PAGO_OAUTH_TOKEN_FILE")
+	mercadoPagoOAuthEncryptionKey := os.Getenv("MERCADO_PAGO_OAUTH_ENCRYPTION_KEY")
+
 	pixExpirationTime := os.Getenv("PIX_EXPIRATION_TIME")
 	if pixExpirationTime == "" {
 		pixExpirationTime = "30"
@@ -93,17 +98,19 @@ func LoadConfig() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Port:                   port,
-		DbHost:                 dbHost,
-		DbPort:                 dbPort,
-		DbUser:                 dbUser,
-		DbPassword:             dbPassword,
-		DbName:                 dbName,
-		RabbitmqURI:            rabbitmqURI,
-		RabbitmqQueue:          rabbitmqQueue,
-		MercadoPagoAccessToken: mercadoPagoAccessToken,
-		MercadoPagoWebhookURL:  mercadoPagoWebhookURL,
-		PixExpirationTime:      pixExpirationTimeInt,
+		Port:                          port,
+		DbHost:                        dbHost,
+		DbPort:                        dbPort,
+		DbUser:                        dbUser,
+		DbPassword:                    dbPassword,
+		DbName:                        dbName,
+		RabbitmqURI:                   rabbitmqURI,
+		RabbitmqQueue:                 rabbitmqQueue,
+		MercadoPagoAccessToken:        mercadoPagoAccessToken,
+		MercadoPagoWebhookURL:         mercadoPagoWebhookURL,
+		MercadoPagoOAuthTokenFile:     mercadoPagoOAuthTokenFile,
+		MercadoPagoOAuthEncryptionKey: mercadoPagoOAuthEncryptionKey,
+		PixExpirationTime:             pixExpirationTimeInt,
 	}
 	return cfg, nil
 }

@@ -3,13 +3,110 @@ package bridge
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+var ErrRefundReservationUnavailable = errors.New("refund reservation unavailable")
+
+type RefundPaymentInfoRow struct {
+	PaymentUUID      string
+	GatewayPaymentID string
+	AmountCents      int64
+	Status           string
+	SellerID         string
+}
+
+func (q *Queries) GetRefundPaymentInfo(ctx context.Context, paymentID string) (RefundPaymentInfoRow, error) {
+	const query = `
+SELECT uuid::text, COALESCE(gateway_payment_id, ''), amount_cents, status, COALESCE(seller_id, '') 
+FROM payment_requests 
+WHERE (uuid::text = $1 OR gateway_payment_id = $1)
+LIMIT 1`
+	var row RefundPaymentInfoRow
+	err := q.db.QueryRow(ctx, query, paymentID).Scan(&row.PaymentUUID, &row.GatewayPaymentID, &row.AmountCents, &row.Status, &row.SellerID)
+	return row, err
+}
+
+type RefundRecordRow struct {
+	PaymentID       string
+	IdempotencyKey  string
+	AmountCents     int64
+	Status          string
+	GatewayRefundID string
+}
+
+func (q *Queries) ListProcessingRefunds(ctx context.Context, limit int32) ([]RefundRecordRow, error) {
+	const query = `SELECT payment_request_uuid::text, idempotency_key, amount_cents, status, COALESCE(gateway_refund_id, '') FROM payment_refunds WHERE status = 'processing' ORDER BY updated_at ASC LIMIT $1`
+	rows, err := q.db.Query(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []RefundRecordRow
+	for rows.Next() {
+		var row RefundRecordRow
+		if err := rows.Scan(&row.PaymentID, &row.IdempotencyKey, &row.AmountCents, &row.Status, &row.GatewayRefundID); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+func (q *Queries) ReserveRefund(ctx context.Context, paymentID, idempotencyKey string, amountCents int64, reason string) (RefundRecordRow, error) {
+	const existing = `SELECT payment_request_uuid::text, idempotency_key, amount_cents, status, COALESCE(gateway_refund_id, '') FROM payment_refunds WHERE idempotency_key = $1`
+	var record RefundRecordRow
+	if err := q.db.QueryRow(ctx, existing, idempotencyKey).Scan(&record.PaymentID, &record.IdempotencyKey, &record.AmountCents, &record.Status, &record.GatewayRefundID); err == nil {
+		return record, nil
+	}
+
+	const insert = `
+WITH totals AS (
+  SELECT COALESCE(SUM(amount_cents) FILTER (WHERE status IN ('requested', 'processing', 'succeeded')), 0)::bigint AS refunded
+  FROM payment_refunds WHERE payment_request_uuid = $1::uuid
+), payment AS (
+	SELECT amount_cents, status FROM payment_requests WHERE uuid = $1::uuid FOR UPDATE
+)
+INSERT INTO payment_refunds (payment_request_uuid, idempotency_key, amount_cents, reason, status)
+SELECT $1::uuid, $2, $3::bigint, $4, 'processing'
+FROM totals, payment
+WHERE payment.status IN ('succeeded', 'partially_refunded')
+  AND $3::bigint > 0 AND totals.refunded + $3::bigint <= payment.amount_cents
+RETURNING payment_request_uuid::text, idempotency_key, amount_cents, status, ''`
+	if err := q.db.QueryRow(ctx, insert, paymentID, idempotencyKey, amountCents, reason).Scan(&record.PaymentID, &record.IdempotencyKey, &record.AmountCents, &record.Status, &record.GatewayRefundID); err != nil {
+		return RefundRecordRow{}, ErrRefundReservationUnavailable
+	}
+	return record, nil
+}
+
+func (q *Queries) MarkRefundSucceeded(ctx context.Context, idempotencyKey, gatewayRefundID string) error {
+	const query = `
+WITH updated AS (
+  UPDATE payment_refunds SET status = 'succeeded', gateway_refund_id = $2, updated_at = NOW()
+  WHERE idempotency_key = $1 RETURNING payment_request_uuid
+), totals AS (
+  SELECT u.payment_request_uuid, p.amount_cents, COALESCE(SUM(r.amount_cents) FILTER (WHERE r.status = 'succeeded'), 0)::bigint AS refunded
+  FROM updated u JOIN payment_requests p ON p.uuid = u.payment_request_uuid
+  JOIN payment_refunds r ON r.payment_request_uuid = u.payment_request_uuid
+  GROUP BY u.payment_request_uuid, p.amount_cents
+)
+UPDATE payment_requests p SET status = CASE WHEN t.refunded >= t.amount_cents THEN 'refunded' ELSE 'partially_refunded' END, updated_at = NOW()
+FROM totals t WHERE p.uuid = t.payment_request_uuid`
+	_, err := q.db.Exec(ctx, query, idempotencyKey, gatewayRefundID)
+	return err
+}
+
+func (q *Queries) MarkRefundFailed(ctx context.Context, idempotencyKey, code, message string) error {
+	const query = `UPDATE payment_refunds SET status = 'failed', error_code = $2, error_message = $3, updated_at = NOW() WHERE idempotency_key = $1`
+	_, err := q.db.Exec(ctx, query, idempotencyKey, code, message)
+	return err
+}
+
 const getPaymentRequestByGatewayPaymentID = `-- name: GetPaymentRequestByGatewayPaymentID :one
-SELECT uuid::text AS uuid, amount_cents, currency, status
+SELECT uuid::text AS uuid, amount_cents, currency, status, COALESCE(seller_id, '')
 FROM payment_requests
 WHERE gateway_payment_id = $1
 LIMIT 1
@@ -20,6 +117,7 @@ type GetPaymentRequestByGatewayPaymentIDRow struct {
 	AmountCents int64
 	Currency    string
 	Status      string
+	SellerID    string
 }
 
 func (q *Queries) GetPaymentRequestByGatewayPaymentID(ctx context.Context, gatewayPaymentID string) (GetPaymentRequestByGatewayPaymentIDRow, error) {
@@ -30,6 +128,7 @@ func (q *Queries) GetPaymentRequestByGatewayPaymentID(ctx context.Context, gatew
 		&i.AmountCents,
 		&i.Currency,
 		&i.Status,
+		&i.SellerID,
 	)
 	return i, err
 }
@@ -71,10 +170,9 @@ const updatePaymentStatusByUUID = `-- name: UpdatePaymentStatusByUUID :execrows
   UPDATE payment_requests
   	SET 
 		status = $1, 
-		amount_cents = $2,
 		updated_at = NOW()
-  	WHERE uuid = $3::uuid
-		AND status NOT IN ('succeeded', 'failed', 'canceled')
+	  WHERE uuid = $2::uuid
+		AND status NOT IN ('failed', 'canceled', 'refunded', 'partially_refunded')
 `
 
 type UpdatePaymentStatusByUUIDParams struct {
@@ -91,7 +189,6 @@ func (q *Queries) UpdatePaymentStatusByUUID(
 		ctx,
 		updatePaymentStatusByUUID,
 		arg.Status,
-		arg.AmountCents,
 		arg.Uuid,
 	)
 

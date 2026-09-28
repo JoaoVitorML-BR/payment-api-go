@@ -47,7 +47,7 @@ type mockGatewayReaderForReconciliation struct {
 	payments map[string]*GatewayPaymentDetails
 }
 
-func (m *mockGatewayReaderForReconciliation) GetPayment(ctx context.Context, gatewayPaymentID string) (*GatewayPaymentDetails, error) {
+func (m *mockGatewayReaderForReconciliation) GetPayment(ctx context.Context, gatewayPaymentID string, sellerID string) (*GatewayPaymentDetails, error) {
 	if p, ok := m.payments[gatewayPaymentID]; ok {
 		return p, nil
 	}

@@ -162,6 +162,18 @@ func (q *Queries) UpdatePaymentRequestError(ctx context.Context, arg UpdatePayme
 	return err
 }
 
+const updatePaymentRequestFailed = `-- name: UpdatePaymentRequestFailed :exec
+UPDATE payment_requests
+SET status = 'failed', updated_at = now()
+WHERE uuid = $1
+  AND status NOT IN ('succeeded', 'failed', 'canceled')
+`
+
+func (q *Queries) UpdatePaymentRequestFailed(ctx context.Context, uuid pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, updatePaymentRequestFailed, uuid)
+	return err
+}
+
 const updatePaymentRequestSuccess = `-- name: UpdatePaymentRequestSuccess :exec
 UPDATE payment_requests
 SET gateway            = $2,

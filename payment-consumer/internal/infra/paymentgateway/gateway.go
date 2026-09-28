@@ -13,22 +13,25 @@ const (
 )
 
 type CreatePaymentInput struct {
-	AmountCents     int64
-	Currency        string // always "BRL" for now
-	PaymentMethod   string // "pix", "credit", "debit"
-	IdempotencyKey  string
-	Description     string
-	PayerEmail      string
-	PayerName       string
-	PayerTaxID      string // CPF/CNPJ, required for Pix in Mercado Pago
-	PayerAddress    string
-	PayerCity       string
-	PayerState      string
-	PayerPostalCode string
-	Metadata        map[string]string
-	CardToken       string // used only when PaymentMethod == "credit"/"debit"
-	Installments    *int
-	NotificationURL string // webhook URL, for the provider to call back
+	AmountCents         int64
+	Currency            string // always "BRL" for now
+	PaymentMethod       string // "pix", "credit", "debit"
+	IdempotencyKey      string
+	Description         string
+	PayerEmail          string
+	PayerName           string
+	PayerTaxID          string // CPF/CNPJ, required for Pix in Mercado Pago
+	PayerAddress        string
+	PayerCity           string
+	PayerState          string
+	PayerPostalCode     string
+	Metadata            map[string]string
+	CardToken           string // used only when PaymentMethod == "credit"/"debit"
+	Installments        *int
+	NotificationURL     string // webhook URL, for the provider to call back
+	SellerID            string
+	MarketplaceFeeCents int64
+	SellerAccessToken   string
 }
 
 type PaymentResult struct {

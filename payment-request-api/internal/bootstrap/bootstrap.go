@@ -3,10 +3,8 @@ package bootstrap
 
 import (
 	"context"
-	"log"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/config"
@@ -42,19 +40,39 @@ func NewRouter(cfg *config.Config) *gin.Engine {
 		panic("Failed to initialize payment repository")
 	}
 
-	mpAccessToken := strings.TrimSpace(os.Getenv("MERCADO_PAGO_ACCESS_TOKEN"))
-	if mpAccessToken == "" {
-		log.Fatal("MERCADO_PAGO_ACCESS_TOKEN is required for webhook validation")
+	mpAccessToken := cfg.MercadoPagoAccessToken
+	var tokenStore *paymentmercadopago.EncryptedFileTokenStore
+	if cfg.MercadoPagoOAuthClientID != "" {
+		tokenStore, err = paymentmercadopago.NewEncryptedFileTokenStore(cfg.MercadoPagoOAuthTokenFile, cfg.MercadoPagoOAuthEncryptionKey)
+		if err != nil {
+			panic("Failed to initialize Orders token store")
+		}
 	}
-	gatewayReader := paymentmercadopago.NewGatewayReader(mpAccessToken)
+	gatewayReader := paymentmercadopago.NewGatewayReader(mpAccessToken, tokenStore)
 
 	paymentService, err := handler.NewPaymentService(paymentRepository, publisher, gatewayReader)
 	if err != nil {
 		panic("Failed to initialize payment service")
 	}
+	paymentService.SetRefundDependencies(paymentRepository, paymentmercadopago.NewRefundClient(mpAccessToken, tokenStore))
 	paymentHandler, err := handler.NewPaymentHandler(paymentService, cfg)
 	if err != nil {
 		panic("Failed to initialize payment handler")
+	}
+
+	var oauthHandler *server.OAuthHandler
+	if cfg.MercadoPagoOAuthClientID != "" {
+		oauthClient, oauthErr := paymentmercadopago.NewOAuthClient(
+			cfg.MercadoPagoOAuthClientID,
+			cfg.MercadoPagoOAuthClientSecret,
+		)
+		if oauthErr != nil {
+			panic("Failed to initialize Mercado Pago OAuth client")
+		}
+		oauthHandler, err = server.NewOAuthHandler(oauthClient, tokenStore, cfg.MercadoPagoOAuthRedirectURI)
+		if err != nil {
+			panic("Failed to initialize Mercado Pago OAuth handler")
+		}
 	}
 
 	intervalSec := 60
@@ -79,5 +97,5 @@ func NewRouter(cfg *config.Config) *gin.Engine {
 	)
 	reconciler.Start(context.Background())
 
-	return server.SetupRouter(paymentHandler)
+	return server.SetupRouter(paymentHandler, oauthHandler)
 }

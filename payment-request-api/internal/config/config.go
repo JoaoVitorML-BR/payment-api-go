@@ -6,15 +6,22 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	Port                     string
-	Pool                     *pgxpool.Pool
-	MercadoPagoWebhookSecret string
+	Port                          string
+	Pool                          *pgxpool.Pool
+	MercadoPagoAccessToken        string
+	MercadoPagoWebhookSecret      string
+	MercadoPagoOAuthClientID      string
+	MercadoPagoOAuthClientSecret  string
+	MercadoPagoOAuthRedirectURI   string
+	MercadoPagoOAuthTokenFile     string
+	MercadoPagoOAuthEncryptionKey string
 }
 
 func LoadConfig() (*Config, error) {
@@ -54,11 +61,43 @@ func LoadConfig() (*Config, error) {
 		dbName = "payment_request"
 	}
 
+	mercadoPagoAccessToken := strings.TrimSpace(os.Getenv("MERCADO_PAGO_ACCESS_TOKEN"))
+	if mercadoPagoAccessToken == "" {
+		return nil, fmt.Errorf("MERCADO_PAGO_ACCESS_TOKEN is required for webhook validation")
+	}
+
 	mercadoPagoWebhookSecret := os.Getenv("MERCADO_PAGO_WEBHOOK_SECRET")
 	if mercadoPagoWebhookSecret == "" {
 		return nil, fmt.Errorf(
 			"MERCADO_PAGO_WEBHOOK_SECRET is not set in the environment",
 		)
+	}
+
+	oauthClientID := os.Getenv("MERCADO_PAGO_OAUTH_CLIENT_ID")
+	oauthClientSecret := os.Getenv("MERCADO_PAGO_OAUTH_CLIENT_SECRET")
+	oauthRedirectURI := os.Getenv("MERCADO_PAGO_OAUTH_REDIRECT_URI")
+	oauthTokenFile := os.Getenv("MERCADO_PAGO_OAUTH_TOKEN_FILE")
+	oauthEncryptionKey := os.Getenv("MERCADO_PAGO_OAUTH_ENCRYPTION_KEY")
+	oauthValues := []string{oauthClientID, oauthClientSecret, oauthRedirectURI, oauthTokenFile, oauthEncryptionKey}
+	oauthConfigured := false
+	for _, value := range oauthValues {
+		if value != "" {
+			oauthConfigured = true
+			break
+		}
+	}
+	if oauthConfigured {
+		for name, value := range map[string]string{
+			"MERCADO_PAGO_OAUTH_CLIENT_ID":      oauthClientID,
+			"MERCADO_PAGO_OAUTH_CLIENT_SECRET":  oauthClientSecret,
+			"MERCADO_PAGO_OAUTH_REDIRECT_URI":   oauthRedirectURI,
+			"MERCADO_PAGO_OAUTH_TOKEN_FILE":     oauthTokenFile,
+			"MERCADO_PAGO_OAUTH_ENCRYPTION_KEY": oauthEncryptionKey,
+		} {
+			if value == "" {
+				return nil, fmt.Errorf("%s is required when Mercado Pago OAuth is enabled", name)
+			}
+		}
 	}
 
 	// Create pgxpool connection
@@ -75,9 +114,15 @@ func LoadConfig() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Port:                     port,
-		Pool:                     pool,
-		MercadoPagoWebhookSecret: mercadoPagoWebhookSecret,
+		Port:                          port,
+		Pool:                          pool,
+		MercadoPagoAccessToken:        mercadoPagoAccessToken,
+		MercadoPagoWebhookSecret:      mercadoPagoWebhookSecret,
+		MercadoPagoOAuthClientID:      oauthClientID,
+		MercadoPagoOAuthClientSecret:  oauthClientSecret,
+		MercadoPagoOAuthRedirectURI:   oauthRedirectURI,
+		MercadoPagoOAuthTokenFile:     oauthTokenFile,
+		MercadoPagoOAuthEncryptionKey: oauthEncryptionKey,
 	}
 	return cfg, nil
 }

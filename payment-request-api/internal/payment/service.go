@@ -18,6 +18,7 @@ type CreatePaymentResponse struct {
 	Status        string    `json:"status"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+	Created       bool      `json:"-"`
 }
 
 type PaymentStatusResponse struct {
@@ -50,11 +51,39 @@ type PaymentRepository interface {
 	GetPendingPaymentsForReconciliation(ctx context.Context, maxUpdatedAt time.Time, limit int32) ([]ReconciliationItem, error)
 }
 
+type RefundRepository interface {
+	GetRefundPaymentInfo(context.Context, string) (RefundPaymentInfo, error)
+	ReserveRefund(context.Context, string, string, int64, string) (RefundRecord, error)
+	MarkRefundSucceeded(context.Context, string, string) error
+	MarkRefundFailed(context.Context, string, string, string) error
+	ListProcessingRefunds(context.Context, int32) ([]RefundRecord, error)
+}
+
+type RefundPaymentInfo struct {
+	PaymentUUID      string
+	GatewayPaymentID string
+	AmountCents      int64
+	Status           string
+	SellerID         string
+}
+type RefundRecord struct {
+	PaymentID       string
+	IdempotencyKey  string
+	AmountCents     int64
+	Status          string
+	GatewayRefundID string
+}
+type RefundGateway interface {
+	Refund(context.Context, string, string, int64) (string, error)
+	FindRefund(context.Context, string, string, int64) (string, bool, error)
+}
+
 type PaymentGatewayValidationData struct {
 	PaymentUUID      string
 	ExpectedAmount   int64
 	ExpectedCurrency string
 	CurrentStatus    string
+	SellerID         string
 }
 
 type GatewayPaymentDetails struct {
@@ -66,7 +95,7 @@ type GatewayPaymentDetails struct {
 }
 
 type GatewayPaymentReader interface {
-	GetPayment(ctx context.Context, gatewayPaymentID string) (*GatewayPaymentDetails, error)
+	GetPayment(ctx context.Context, gatewayPaymentID string, sellerID string) (*GatewayPaymentDetails, error)
 }
 
 var (
@@ -78,37 +107,97 @@ type PaymentService struct {
 	repo          PaymentRepository
 	publisher     events.PaymentRequestedEventPublisher
 	gatewayReader GatewayPaymentReader
+	refundRepo    RefundRepository
+	refundGateway RefundGateway
 }
 
 type RefundRequest struct {
-	PaymentID   string `json:"payment_id"`
-	AmountCents int64  `json:"amount_cents"` // Partial or full refund in cents
-	SplitRule   string `json:"split_rule"`   // Optionally specify '50/50'
+	PaymentID      string `json:"payment_id"`
+	AmountCents    int64  `json:"amount_cents"` // Partial or full refund in cents
+	SplitRule      string `json:"split_rule"`   // Optionally specify '50/50'
+	IdempotencyKey string `json:"idempotency_key"`
+	Reason         string `json:"reason"`
+}
+
+func (s *PaymentService) SetRefundDependencies(repo RefundRepository, gateway RefundGateway) {
+	s.refundRepo = repo
+	s.refundGateway = gateway
 }
 
 func (s *PaymentService) ProcessRefund(ctx context.Context, req RefundRequest) error {
-	if req.PaymentID == "" {
+	if strings.TrimSpace(req.PaymentID) == "" {
 		return errors.New("missing payment ID")
 	}
 
 	if req.AmountCents <= 0 {
 		return errors.New("amount_cents must be positive")
 	}
-
-	refundCents := req.AmountCents
-	if req.SplitRule == "50/50" {
-		refundCents = req.AmountCents / 2 // Handle proportional refunds
+	if strings.TrimSpace(req.SplitRule) != "" {
+		return errors.New("split_rule is not supported; refund allocation must come from the consulting service")
 	}
 
-	rowsAffected, err := s.repo.UpdatePaymentStatus(ctx, req.PaymentID, "refunded", refundCents)
+	if strings.TrimSpace(req.IdempotencyKey) == "" {
+		return errors.New("idempotency_key is required")
+	}
+	if s.refundRepo == nil || s.refundGateway == nil {
+		return errors.New("refund flow is not configured")
+	}
+	info, err := s.refundRepo.GetRefundPaymentInfo(ctx, req.PaymentID)
 	if err != nil {
-		return err
+		return fmt.Errorf("get payment for refund: %w", err)
 	}
-	if rowsAffected == 0 {
-		log.Printf("[INFO] Refund for payment %s had no effect on DB status; likely in terminal state", req.PaymentID)
+	if info.Status != "succeeded" && info.Status != "partially_refunded" {
+		return fmt.Errorf("payment status %q cannot be refunded", info.Status)
 	}
-
+	if req.AmountCents > info.AmountCents {
+		return errors.New("refund amount exceeds original payment")
+	}
+	targetUUID := info.PaymentUUID
+	if targetUUID == "" {
+		targetUUID = req.PaymentID
+	}
+	reservation, err := s.refundRepo.ReserveRefund(ctx, targetUUID, req.IdempotencyKey, req.AmountCents, req.Reason)
+	if err != nil {
+		return fmt.Errorf("reserve refund: %w", err)
+	}
+	if reservation.Status == "succeeded" {
+		return nil
+	}
+	gatewayRefundID, err := s.refundGateway.Refund(ctx, info.GatewayPaymentID, info.SellerID, req.AmountCents)
+	if err != nil {
+		_ = s.refundRepo.MarkRefundFailed(ctx, req.IdempotencyKey, "gateway_refund_failed", err.Error())
+		return fmt.Errorf("execute gateway refund: %w", err)
+	}
+	if err := s.refundRepo.MarkRefundSucceeded(ctx, req.IdempotencyKey, gatewayRefundID); err != nil {
+		return fmt.Errorf("persist refund success: %w", err)
+	}
 	return nil
+}
+
+func (s *PaymentService) ReconcileProcessingRefunds(ctx context.Context, limit int32) (int, error) {
+	if s.refundRepo == nil || s.refundGateway == nil {
+		return 0, errors.New("refund flow is not configured")
+	}
+	items, err := s.refundRepo.ListProcessingRefunds(ctx, limit)
+	if err != nil {
+		return 0, fmt.Errorf("list processing refunds: %w", err)
+	}
+	reconciled := 0
+	for _, item := range items {
+		info, err := s.refundRepo.GetRefundPaymentInfo(ctx, item.PaymentID)
+		if err != nil {
+			continue
+		}
+		gatewayID, found, err := s.refundGateway.FindRefund(ctx, info.GatewayPaymentID, info.SellerID, item.AmountCents)
+		if err != nil || !found {
+			continue
+		}
+		if err := s.refundRepo.MarkRefundSucceeded(ctx, item.IdempotencyKey, gatewayID); err != nil {
+			return reconciled, fmt.Errorf("mark reconciled refund: %w", err)
+		}
+		reconciled++
+	}
+	return reconciled, nil
 }
 
 func NewPaymentService(repo PaymentRepository, publisher events.PaymentRequestedEventPublisher, gatewayReader GatewayPaymentReader) (*PaymentService, error) {
@@ -151,7 +240,7 @@ func (s *PaymentService) ProcessMercadoPagoWebhook(ctx context.Context, gatewayP
 		return fmt.Errorf("%w: local payment not linked yet", ErrWebhookRetryable)
 	}
 
-	gatewayPayment, err := s.gatewayReader.GetPayment(ctx, gatewayPaymentID)
+	gatewayPayment, err := s.gatewayReader.GetPayment(ctx, gatewayPaymentID, localPayment.SellerID)
 	if err != nil {
 		return fmt.Errorf("%w: failed to fetch payment from Mercado Pago: %v", ErrWebhookRetryable, err)
 	}
@@ -258,8 +347,10 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req CreatePaymentReq
 	}
 
 	// Publish the payment requested event
-	if err := s.publishPaymentRequestedEvent(req, resp); err != nil {
-		return CreatePaymentResponse{}, err
+	if resp.Created {
+		if err := s.publishPaymentRequestedEvent(req, resp); err != nil {
+			return CreatePaymentResponse{}, err
+		}
 	}
 
 	return resp, nil
@@ -298,6 +389,8 @@ func (s *PaymentService) publishPaymentRequestedEvent(req CreatePaymentRequest, 
 		req.PaymentMethod,
 		customer,
 		req.Installments,
+		req.SellerID,
+		req.MarketplaceFeeCents,
 	)
 
 	return s.publisher.Publish(event)

@@ -19,6 +19,48 @@ type PaymentRepositoryDB struct {
 	queries *dbbridge.Queries
 }
 
+func (r *PaymentRepositoryDB) GetRefundPaymentInfo(ctx context.Context, paymentID string) (RefundPaymentInfo, error) {
+	row, err := r.queries.GetRefundPaymentInfo(ctx, paymentID)
+	if err != nil {
+		return RefundPaymentInfo{}, err
+	}
+	return RefundPaymentInfo{
+		PaymentUUID:      row.PaymentUUID,
+		GatewayPaymentID: row.GatewayPaymentID,
+		AmountCents:      row.AmountCents,
+		Status:           row.Status,
+		SellerID:         row.SellerID,
+	}, nil
+}
+
+func (r *PaymentRepositoryDB) ReserveRefund(ctx context.Context, paymentID, idempotencyKey string, amountCents int64, reason string) (RefundRecord, error) {
+	row, err := r.queries.ReserveRefund(ctx, paymentID, idempotencyKey, amountCents, reason)
+	if err != nil {
+		return RefundRecord{}, err
+	}
+	return RefundRecord{PaymentID: row.PaymentID, IdempotencyKey: row.IdempotencyKey, AmountCents: row.AmountCents, Status: row.Status, GatewayRefundID: row.GatewayRefundID}, nil
+}
+
+func (r *PaymentRepositoryDB) MarkRefundSucceeded(ctx context.Context, idempotencyKey, gatewayRefundID string) error {
+	return r.queries.MarkRefundSucceeded(ctx, idempotencyKey, gatewayRefundID)
+}
+
+func (r *PaymentRepositoryDB) MarkRefundFailed(ctx context.Context, idempotencyKey, code, message string) error {
+	return r.queries.MarkRefundFailed(ctx, idempotencyKey, code, message)
+}
+
+func (r *PaymentRepositoryDB) ListProcessingRefunds(ctx context.Context, limit int32) ([]RefundRecord, error) {
+	rows, err := r.queries.ListProcessingRefunds(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]RefundRecord, len(rows))
+	for i, row := range rows {
+		result[i] = RefundRecord{PaymentID: row.PaymentID, IdempotencyKey: row.IdempotencyKey, AmountCents: row.AmountCents, Status: row.Status, GatewayRefundID: row.GatewayRefundID}
+	}
+	return result, nil
+}
+
 func (r *PaymentRepositoryDB) UpdatePaymentStatus(ctx context.Context, paymentUUID string, status string, amountCents int64) (int64, error) {
 	parsedUUID := parseStringToUUID(paymentUUID)
 
@@ -79,6 +121,7 @@ func (r *PaymentRepositoryDB) GetPaymentRequestByGatewayPaymentID(ctx context.Co
 		ExpectedAmount:   row.AmountCents,
 		ExpectedCurrency: row.Currency,
 		CurrentStatus:    row.Status,
+		SellerID:         row.SellerID,
 	}, nil
 }
 
@@ -124,6 +167,8 @@ func (r *PaymentRepositoryDB) CreatePaymentRequest(ctx context.Context, req Crea
 		StripePaymentIntentID: pgtype.Text{Valid: false},
 		Gateway:               "mercado_pago",
 		GatewayPaymentID:      pgtype.Text{Valid: false},
+		SellerID:              pgtype.Text{String: req.SellerID, Valid: req.SellerID != ""},
+		MarketplaceFeeCents:   req.MarketplaceFeeCents,
 	}
 
 	row, err := r.queries.CreatePaymentRequest(ctx, params)
@@ -140,6 +185,7 @@ func (r *PaymentRepositoryDB) CreatePaymentRequest(ctx context.Context, req Crea
 				Status:        existing.Status,
 				CreatedAt:     existing.CreatedAt.Time,
 				UpdatedAt:     existing.UpdatedAt.Time,
+				Created:       false,
 			}, nil
 		}
 		return CreatePaymentResponse{}, err
@@ -151,6 +197,7 @@ func (r *PaymentRepositoryDB) CreatePaymentRequest(ctx context.Context, req Crea
 		Status:        row.Status,
 		CreatedAt:     row.CreatedAt.Time,
 		UpdatedAt:     row.UpdatedAt.Time,
+		Created:       true,
 	}, nil
 }
 

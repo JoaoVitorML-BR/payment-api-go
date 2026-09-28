@@ -8,15 +8,34 @@ CREATE TABLE IF NOT EXISTS payment_requests (
     CHECK (payment_method IN ('credit', 'debit', 'pix', 'boleto')),
     installments INT CHECK (installments IS NULL OR installments BETWEEN 1 AND 12),
     status VARCHAR(20) NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending', 'processing', 'requires_action', 'succeeded', 'failed', 'canceled')),
+    CHECK (status IN ('pending', 'processing', 'requires_action', 'succeeded', 'failed', 'canceled', 'partially_refunded', 'refunded')),
     failure_code VARCHAR(50),
     failure_message TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     stripe_payment_intent_id VARCHAR(255) UNIQUE,
     gateway VARCHAR(30) NOT NULL DEFAULT 'mercado_pago',
-    gateway_payment_id VARCHAR(255) UNIQUE
+    gateway_payment_id VARCHAR(255) UNIQUE,
+    seller_id VARCHAR(100),
+    marketplace_fee_cents BIGINT,
+    gateway_fee_cents BIGINT,
+    seller_amount_cents BIGINT
 );
+
+  CREATE TABLE IF NOT EXISTS payment_refunds (
+    uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    payment_request_uuid UUID NOT NULL REFERENCES payment_requests(uuid) ON DELETE RESTRICT,
+    idempotency_key VARCHAR(255) NOT NULL UNIQUE,
+    amount_cents BIGINT NOT NULL CHECK (amount_cents > 0),
+    reason VARCHAR(50) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'requested'
+      CHECK (status IN ('requested', 'processing', 'succeeded', 'failed')),
+    gateway_refund_id VARCHAR(255),
+    error_code VARCHAR(100),
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
 
 CREATE TABLE IF NOT EXISTS payment_attempts (
     id SERIAL PRIMARY KEY,

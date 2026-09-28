@@ -21,13 +21,22 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+const maxCreatePaymentAttempts = 3
+
+type PaymentQueries interface {
+	GetLatestPaymentAttempt(ctx context.Context, paymentRequestUuid pgtype.UUID) (bridge.GetLatestPaymentAttemptRow, error)
+	UpdatePaymentAttempt(ctx context.Context, arg bridge.UpdatePaymentAttemptParams) error
+	UpdatePaymentRequestFailed(ctx context.Context, uuid pgtype.UUID) error
+	UpdatePaymentRequestSuccess(ctx context.Context, arg bridge.UpdatePaymentRequestSuccessParams) error
+}
+
 type PaymentRequestedProcessor struct {
-	queries *bridge.Queries
+	queries PaymentQueries
 	gateway paymentgateway.Gateway
 	cfg     *config.Config
 }
 
-func NewPaymentRequestedProcessor(queries *bridge.Queries, gateway paymentgateway.Gateway, cfg *config.Config) *PaymentRequestedProcessor {
+func NewPaymentRequestedProcessor(queries PaymentQueries, gateway paymentgateway.Gateway, cfg *config.Config) *PaymentRequestedProcessor {
 	return &PaymentRequestedProcessor{
 		queries: queries,
 		gateway: gateway,
@@ -38,44 +47,84 @@ func NewPaymentRequestedProcessor(queries *bridge.Queries, gateway paymentgatewa
 func (p *PaymentRequestedProcessor) Handle(ctx context.Context, d amqp.Delivery) error {
 	msg, err := parsePaymentRequestedMessage(d.Body)
 	if err != nil {
-		return err
+		log.Printf("[ERROR] failed to parse message, discarding: %v", err)
+		return nil
 	}
 
-	hasAttempt, err := hasSuccessfulAttempt(ctx, p.queries, msg.PaymentID)
+	paymentUUID := parseStringToUUID(msg.PaymentID)
+
+	latest, err := p.queries.GetLatestPaymentAttempt(ctx, paymentUUID)
+	found := true
 	if err != nil {
-		return fmt.Errorf("check existing successful attempt: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			found = false
+		} else {
+			return fmt.Errorf("fetch latest payment attempt: %w", err)
+		}
 	}
-	if hasAttempt {
-		log.Printf("[INFO] Payment %s already has a successful attempt, skipping creation", msg.PaymentID)
+
+	if found && latest.GatewayPaymentID.Valid && latest.Status != "failed" {
+		log.Printf("[INFO] Payment %s already has a non-failed attempt, skipping creation", msg.PaymentID)
 		return nil
+	}
+
+	if found && latest.Status == "failed" && int(latest.AttemptNumber) >= maxCreatePaymentAttempts {
+		log.Printf("[INFO] Payment %s already exhausted retries (attempt=%d), closing without calling gateway", msg.PaymentID, latest.AttemptNumber)
+		if err := markPaymentRequestFailed(ctx, p.queries, msg.PaymentID); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	attempt := 1
+	if found {
+		attempt = int(latest.AttemptNumber) + 1
 	}
 
 	currency := strings.ToUpper(strings.TrimSpace(msg.Currency))
 	metadata := buildPaymentMetadata(msg)
 	ctx = requestoptions.WithIdempotencyKey(ctx, msg.IdempotencyKey)
 	input := paymentgateway.CreatePaymentInput{
-		AmountCents:     msg.AmountCents,
-		Currency:        currency,
-		PaymentMethod:   strings.ToLower(strings.TrimSpace(msg.PaymentMethod)),
-		IdempotencyKey:  msg.IdempotencyKey,
-		Description:     fmt.Sprintf("consultoria online - %s", msg.PaymentID),
-		PayerEmail:      customerEmail(msg.Customer),
-		PayerName:       customerName(msg.Customer),
-		PayerTaxID:      customerTaxID(msg.Customer),
-		PayerAddress:    customerAddress(msg.Customer),
-		PayerCity:       customerCity(msg.Customer),
-		PayerState:      customerState(msg.Customer),
-		PayerPostalCode: customerPostalCode(msg.Customer),
-		Metadata:        metadata,
-		NotificationURL: p.cfg.MercadoPagoWebhookURL,
+		AmountCents:         msg.AmountCents,
+		Currency:            currency,
+		PaymentMethod:       strings.ToLower(strings.TrimSpace(msg.PaymentMethod)),
+		IdempotencyKey:      msg.IdempotencyKey,
+		Description:         fmt.Sprintf("consultoria online - %s", msg.PaymentID),
+		PayerEmail:          customerEmail(msg.Customer),
+		PayerName:           customerName(msg.Customer),
+		PayerTaxID:          customerTaxID(msg.Customer),
+		PayerAddress:        customerAddress(msg.Customer),
+		PayerCity:           customerCity(msg.Customer),
+		PayerState:          customerState(msg.Customer),
+		PayerPostalCode:     customerPostalCode(msg.Customer),
+		Metadata:            metadata,
+		NotificationURL:     p.cfg.MercadoPagoWebhookURL,
+		SellerID:            strings.TrimSpace(msg.SellerID),
+		MarketplaceFeeCents: msg.MarketplaceFeeCents,
 	}
 
-	paymentResult, err := p.gateway.CreatePayment(ctx, input)
-	if err != nil {
-		return saveFailedPaymentAttempt(ctx, p.queries, msg.PaymentID, "", currency, "create_payment", err)
+	paymentResult, gwErr := p.gateway.CreatePayment(ctx, input)
+	if gwErr != nil {
+		if saveErr := saveFailedPaymentAttempt(ctx, p.queries, msg.PaymentID, "", currency, "create_payment", gwErr, attempt); saveErr != nil {
+			return saveErr
+		}
+
+		retryable := paymentgateway.IsRetryableGatewayError(gwErr)
+		exhausted := attempt >= maxCreatePaymentAttempts
+
+		if !retryable || exhausted {
+			log.Printf("[INFO] giving up on payment %s (attempt=%d, retryable=%v): %v", msg.PaymentID, attempt, retryable, gwErr)
+			if markErr := markPaymentRequestFailed(ctx, p.queries, msg.PaymentID); markErr != nil {
+				return markErr
+			}
+			return nil
+		}
+
+		log.Printf("[INFO] retryable error on attempt %d/%d for payment %s, will retry", attempt, maxCreatePaymentAttempts, msg.PaymentID)
+		return gwErr
 	}
 
-	if err := saveSuccessfulPaymentAttempt(ctx, p.queries, msg.PaymentID, paymentResult, currency); err != nil {
+	if err := saveSuccessfulPaymentAttempt(ctx, p.queries, msg.PaymentID, paymentResult, currency, attempt); err != nil {
 		return fmt.Errorf("save successful payment attempt: %w", err)
 	}
 
@@ -88,18 +137,6 @@ func parsePaymentRequestedMessage(body []byte) (paymentRequestedMessage, error) 
 		return paymentRequestedMessage{}, err
 	}
 	return msg, nil
-}
-
-func hasSuccessfulAttempt(ctx context.Context, queries *bridge.Queries, paymentID string) (bool, error) {
-	existingAttempt, err := queries.GetLatestPaymentAttempt(ctx, parseStringToUUID(paymentID))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil
-		}
-		return false, err
-	}
-
-	return existingAttempt.GatewayPaymentID.Valid && existingAttempt.Status != "failed", nil
 }
 
 func buildPaymentMetadata(msg paymentRequestedMessage) map[string]string {
@@ -117,7 +154,7 @@ func buildPaymentMetadata(msg paymentRequestedMessage) map[string]string {
 	return metadata
 }
 
-func saveFailedPaymentAttempt(ctx context.Context, queries *bridge.Queries, paymentID string, gatewayPaymentID string, currency string, operation string, err error) error {
+func saveFailedPaymentAttempt(ctx context.Context, queries PaymentQueries, paymentID string, gatewayPaymentID string, currency string, operation string, err error, attempt int) error {
 	errorCode, errorMessage, errorPayload := gatewayErrorPayload(err)
 	log.Printf("[ERROR] %s failed: %s", operation, errorMessage)
 
@@ -135,7 +172,7 @@ func saveFailedPaymentAttempt(ctx context.Context, queries *bridge.Queries, paym
 		PixQrCode:             pgtype.Text{},
 		PixQrCodeBase64:       pgtype.Text{},
 		PixExpirationAt:       pgtype.Timestamptz{},
-		AttemptNumber:         1,
+		AttemptNumber:         int32(attempt),
 		Currency:              strings.ToUpper(currency),
 		Status:                "failed",
 		ErrorCode:             pgtype.Text{String: errorCode, Valid: errorCode != ""},
@@ -147,10 +184,10 @@ func saveFailedPaymentAttempt(ctx context.Context, queries *bridge.Queries, paym
 		return errors.Join(err, fmt.Errorf("save failed payment attempt: %w", saveErr))
 	}
 
-	return err
+	return nil
 }
 
-func saveSuccessfulPaymentAttempt(ctx context.Context, queries *bridge.Queries, paymentID string, result *paymentgateway.PaymentResult, currency string) error {
+func saveSuccessfulPaymentAttempt(ctx context.Context, queries PaymentQueries, paymentID string, result *paymentgateway.PaymentResult, currency string, attempt int) error {
 	expirationAt := pgtype.Timestamptz{}
 	if result.PixExpirationDate != "" {
 		parsedExpiration, err := time.Parse(time.RFC3339, result.PixExpirationDate)
@@ -188,7 +225,7 @@ func saveSuccessfulPaymentAttempt(ctx context.Context, queries *bridge.Queries, 
 		PixQrCode:             pixQRCode,
 		PixQrCodeBase64:       pixQRCodeBase64,
 		PixExpirationAt:       expirationAt,
-		AttemptNumber:         1,
+		AttemptNumber:         int32(attempt),
 		Currency:              strings.ToUpper(currency),
 		Status:                string(result.Status),
 		ErrorCode:             pgtype.Text{},
@@ -201,13 +238,13 @@ func saveSuccessfulPaymentAttempt(ctx context.Context, queries *bridge.Queries, 
 	return nil
 }
 
-func updatePaymentRequestSuccess(ctx context.Context, queries *bridge.Queries, paymentID string, result *paymentgateway.PaymentResult) error {
+func updatePaymentRequestSuccess(ctx context.Context, queries PaymentQueries, paymentID string, result *paymentgateway.PaymentResult) error {
 	parsedUUID := parseStringToUUID(paymentID)
 	if err := queries.UpdatePaymentRequestSuccess(ctx, bridge.UpdatePaymentRequestSuccessParams{
 		Uuid:             parsedUUID,
 		Gateway:          "mercado_pago",
 		GatewayPaymentID: pgtype.Text{String: result.GatewayPaymentID, Valid: true},
-		Status:           string(result.Status),
+		Status:           paymentRequestStatus(result.Status),
 	}); err != nil {
 		log.Printf("[ERROR] UpdatePaymentRequestSuccess failed: %v", err)
 		return fmt.Errorf("update payment request success: %w", err)
@@ -215,6 +252,13 @@ func updatePaymentRequestSuccess(ctx context.Context, queries *bridge.Queries, p
 
 	log.Printf("[SUCCESS] Payment %s processed and payment_requests updated successfully", paymentID)
 	return nil
+}
+
+func paymentRequestStatus(status paymentgateway.PaymentStatus) string {
+	if status == paymentgateway.StatusApproved {
+		return "succeeded"
+	}
+	return string(status)
 }
 
 func customerName(customer *CustomerInfo) string {
@@ -286,4 +330,13 @@ func appendOperationToPayload(operation string, payload []byte) []byte {
 	}
 
 	return updatedPayload
+}
+
+func markPaymentRequestFailed(ctx context.Context, queries PaymentQueries, paymentID string) error {
+	if err := queries.UpdatePaymentRequestFailed(ctx, parseStringToUUID(paymentID)); err != nil {
+		log.Printf("[ERROR] markPaymentRequestFailed failed for %s: %v", paymentID, err)
+		return fmt.Errorf("mark payment request failed: %w", err)
+	}
+	log.Printf("[INFO] Payment %s marked as failed after exhausting retries", paymentID)
+	return nil
 }

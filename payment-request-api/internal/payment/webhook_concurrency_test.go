@@ -60,7 +60,7 @@ type mockGatewayReaderSingle struct {
 	payment *GatewayPaymentDetails
 }
 
-func (m *mockGatewayReaderSingle) GetPayment(ctx context.Context, gatewayPaymentID string) (*GatewayPaymentDetails, error) {
+func (m *mockGatewayReaderSingle) GetPayment(ctx context.Context, gatewayPaymentID string, sellerID string) (*GatewayPaymentDetails, error) {
 	return m.payment, nil
 }
 

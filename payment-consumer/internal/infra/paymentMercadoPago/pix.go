@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/paymentgateway"
-	"github.com/mercadopago/sdk-go/pkg/payment"
+	"github.com/mercadopago/sdk-go/pkg/config"
+	"github.com/mercadopago/sdk-go/pkg/order"
 	"github.com/mercadopago/sdk-go/pkg/requestoptions"
 )
 
@@ -29,35 +29,59 @@ func (c *Client) CreatePayment(ctx context.Context, input paymentgateway.CreateP
 		return nil, fmt.Errorf("paymentmercadopago: payer tax id must be a valid CPF or CNPJ for pix payments")
 	}
 
-	client := payment.NewClient(c.cfg)
+	sdkConfig := c.cfg
+	if strings.TrimSpace(input.SellerID) != "" {
+		if input.MarketplaceFeeCents <= 0 {
+			return nil, fmt.Errorf("paymentmercadopago: marketplace fee is required for seller split")
+		}
+		sellerToken, err := c.sellerAccessToken(input.SellerID)
+		if err != nil {
+			return nil, fmt.Errorf("paymentmercadopago: resolve seller token: %w", err)
+		}
+		sdkConfig, err = config.New(sellerToken)
+		if err != nil {
+			return nil, fmt.Errorf("paymentmercadopago: create seller config: %w", err)
+		}
+	} else if input.MarketplaceFeeCents > 0 {
+		return nil, fmt.Errorf("paymentmercadopago: seller id is required for marketplace fee")
+	}
+	client := order.NewClient(sdkConfig)
 
 	amount := float64(input.AmountCents) / 100
 
-	expirationPix := time.Now().Add(30 * time.Minute).UTC().Truncate(time.Millisecond)
+	var marketplaceFee string
+	if input.MarketplaceFeeCents > 0 {
+		marketplaceFee = fmt.Sprintf("%.2f", float64(input.MarketplaceFeeCents)/100)
+	}
 
-	request := payment.Request{
-		TransactionAmount: amount,
+	request := order.Request{
+		Type:              "online",
+		ProcessingMode:    "automatic",
+		TotalAmount:       fmt.Sprintf("%.2f", amount),
+		Currency:          input.Currency,
 		Description:       input.Description,
-		PaymentMethodID:   "pix",
-		NotificationURL:   input.NotificationURL,
 		ExternalReference: input.Metadata["payment_request_uuid"],
-		DateOfExpiration:  &expirationPix,
-		Metadata:          map[string]any{},
-		Payer: &payment.PayerRequest{
+		MarketPlaceFee:    marketplaceFee,
+		ExpirationTime:    "PT30M",
+		Payer: &order.PayerRequest{
 			Email:     strings.TrimSpace(input.PayerEmail),
 			FirstName: firstName,
 			LastName:  lastName,
-			Identification: &payment.IdentificationRequest{
+			Identification: &order.IdentificationRequest{
 				Type:   identificationType,
 				Number: strings.TrimSpace(input.PayerTaxID),
 			},
-			Address: &payment.AddressRequest{
-				City:        strings.TrimSpace(input.PayerCity),
-				FederalUnit: strings.TrimSpace(input.PayerState),
-				ZipCode:     strings.TrimSpace(input.PayerPostalCode),
-				StreetName:  strings.TrimSpace(input.PayerAddress),
+			Address: &order.PayerAddressRequest{
+				City:       strings.TrimSpace(input.PayerCity),
+				State:      strings.TrimSpace(input.PayerState),
+				ZipCode:    strings.TrimSpace(input.PayerPostalCode),
+				StreetName: strings.TrimSpace(input.PayerAddress),
 			},
 		},
+		Transactions: &order.TransactionRequest{Payments: []order.PaymentRequest{{
+			Amount:        fmt.Sprintf("%.2f", amount),
+			PaymentMethod: &order.PaymentMethodRequest{ID: "pix", Type: "bank_transfer"},
+		}}},
 	}
 
 	result, err := client.Create(ctx, request)
@@ -65,54 +89,74 @@ func (c *Client) CreatePayment(ctx context.Context, input paymentgateway.CreateP
 		return nil, fmt.Errorf("create pix payment: %w", err)
 	}
 
-	return toPaymentResult(result), nil
+	return toOrderPaymentResult(result), nil
 }
 
 func (c *Client) GetPayment(ctx context.Context, gatewayPaymentID string) (*paymentgateway.PaymentResult, error) {
-	client := payment.NewClient(c.cfg)
-
-	id, err := strconv.Atoi(gatewayPaymentID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid mercado pago payment id %q: %w", gatewayPaymentID, err)
-	}
-
-	result, err := client.Get(ctx, id)
+	client := order.NewClient(c.cfg)
+	result, err := client.Get(ctx, strings.TrimSpace(gatewayPaymentID))
 	if err != nil {
 		return nil, fmt.Errorf("get payment %s: %w", gatewayPaymentID, err)
 	}
 
-	return toPaymentResult(result), nil
+	return toOrderPaymentResult(result), nil
 }
 
-func toPaymentResult(p *payment.Response) *paymentgateway.PaymentResult {
-	raw, _ := json.Marshal(p)
-	qrCode := ""
-	qrCodeBase64 := ""
-	if p.PointOfInteraction.TransactionData.QRCode != "" {
-		qrCode = p.PointOfInteraction.TransactionData.QRCode
+func toOrderPaymentResult(o *order.Response) *paymentgateway.PaymentResult {
+	if o == nil {
+		return &paymentgateway.PaymentResult{Status: paymentgateway.StatusFailed, RawStatus: "invalid_order"}
 	}
-	if p.PointOfInteraction.TransactionData.QRCodeBase64 != "" {
-		qrCodeBase64 = p.PointOfInteraction.TransactionData.QRCodeBase64
+	if len(o.Transactions.Payments) == 0 {
+		return &paymentgateway.PaymentResult{
+			GatewayPaymentID: o.ID,
+			Status:           normalizeOrderStatus(o.Status),
+			RawStatus:        o.Status,
+			Currency:         o.Currency,
+			RawResponse:      mustJSON(o),
+		}
 	}
+	p := o.Transactions.Payments[0]
+	amount, _ := strconv.ParseFloat(p.Amount, 64)
+	expiration := p.DateOfExpiration
+	if expiration == "" {
+		expiration = p.ExpirationTime
+	}
+	if expiration == "" {
+		expiration = o.ExpirationTime
+	}
+	status := p.Status
+	if strings.TrimSpace(status) == "" {
+		status = o.Status
+	}
+	return &paymentgateway.PaymentResult{
+		GatewayPaymentID:  o.ID,
+		Status:            normalizeOrderStatus(status),
+		RawStatus:         status,
+		AmountCents:       int64(amount * 100),
+		Currency:          o.Currency,
+		PixQRCode:         p.PaymentMethod.QrCode,
+		PixQRCodeBase64:   p.PaymentMethod.QrCodeBase64,
+		PixExpirationDate: expiration,
+		RawResponse:       mustJSON(o),
+	}
+}
 
-	pixExpirationDate := ""
-	if !p.DateOfExpiration.IsZero() {
-		pixExpirationDate = p.DateOfExpiration.UTC().Format(time.RFC3339)
-	}
+func mustJSON(value any) []byte {
+	encoded, _ := json.Marshal(value)
+	return encoded
+}
 
-	res := &paymentgateway.PaymentResult{
-		GatewayPaymentID:  strconv.Itoa(p.ID),
-		RawStatus:         p.Status,
-		Status:            normalizeStatus(p.Status),
-		AmountCents:       int64(p.TransactionAmount * 100),
-		Currency:          p.CurrencyID,
-		PixQRCode:         qrCode,
-		PixQRCodeBase64:   qrCodeBase64,
-		PixExpirationDate: pixExpirationDate,
-		RawResponse:       raw,
+func normalizeOrderStatus(status string) paymentgateway.PaymentStatus {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "processed", "accredited", "approved", "paid":
+		return paymentgateway.StatusApproved
+	case "pending", "in_process", "action_required", "created":
+		return paymentgateway.StatusPending
+	case "cancelled", "canceled", "rejected", "expired":
+		return paymentgateway.StatusRejected
+	default:
+		return paymentgateway.StatusFailed
 	}
-
-	return res
 }
 
 func splitFullName(fullName string) (string, string) {
@@ -141,18 +185,5 @@ func identificationTypeForTaxID(taxID string) string {
 		return "CNPJ"
 	default:
 		return ""
-	}
-}
-
-func normalizeStatus(mpStatus string) paymentgateway.PaymentStatus {
-	switch mpStatus {
-	case "approved":
-		return paymentgateway.StatusApproved
-	case "rejected", "cancelled":
-		return paymentgateway.StatusRejected
-	case "pending", "in_process", "in_mediation":
-		return paymentgateway.StatusPending
-	default:
-		return paymentgateway.StatusFailed
 	}
 }

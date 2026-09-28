@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(paymentHandler *handler.PaymentHandler) *gin.Engine {
+func SetupRouter(paymentHandler *handler.PaymentHandler, oauthHandler *OAuthHandler) *gin.Engine {
 	router := gin.Default()
 
 	router.GET("/health", func(c *gin.Context) {
@@ -26,10 +26,21 @@ func SetupRouter(paymentHandler *handler.PaymentHandler) *gin.Engine {
 	router.POST("/webhook/mercadopago", func(c *gin.Context) {
 		paymentHandler.MercadoPagoWebhookHandler(c)
 	})
+	router.POST("/webhooks/mercadopago", func(c *gin.Context) {
+		paymentHandler.MercadoPagoWebhookHandler(c)
+	})
+	router.POST("/", func(c *gin.Context) {
+		paymentHandler.MercadoPagoWebhookHandler(c)
+	})
 
 	router.POST("/payment/refund", func(c *gin.Context) {
 		paymentHandler.RefundHandler(c)
 	})
+
+	if oauthHandler != nil {
+		router.GET("/oauth/mercadopago/start", oauthHandler.Start)
+		router.GET("/oauth/mercadopago/callback", oauthHandler.Callback)
+	}
 
 	return router
 }

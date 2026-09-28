@@ -56,3 +56,9 @@ FROM payment_attempts
 WHERE payment_request_uuid = $1
 ORDER BY attempt_number DESC
 LIMIT 1;
+
+-- name: UpdatePaymentRequestFailed :exec
+UPDATE payment_requests
+SET status = 'failed', updated_at = now()
+WHERE uuid = $1
+  AND status NOT IN ('succeeded', 'failed', 'canceled');

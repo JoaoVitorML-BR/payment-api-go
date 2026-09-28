@@ -8,12 +8,13 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/paymentgateway"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // isRetryableWorkerError returns true when the message should be requeued.
 func isRetryableWorkerError(err error) bool {
-	return isRetryableServiceError(err)
+	return isRetryableServiceError(err) || paymentgateway.IsRetryableGatewayError(err)
 }
 
 // isRetryableServiceError returns true for transient service/database failures.

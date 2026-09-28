@@ -62,6 +62,12 @@ func (w *ReconcilerWorker) Start(ctx context.Context) {
 				} else if count > 0 {
 					log.Printf("[RECONCILIATION] Reconciliation cycle finished: %d payments reconciled", count)
 				}
+				refundCount, refundErr := w.service.ReconcileProcessingRefunds(ctx, w.batchLimit)
+				if refundErr != nil {
+					log.Printf("[REFUND RECONCILIATION] Error during cycle: %v", refundErr)
+				} else if refundCount > 0 {
+					log.Printf("[REFUND RECONCILIATION] Cycle finished: %d refunds reconciled", refundCount)
+				}
 			}
 		}
 	}()
