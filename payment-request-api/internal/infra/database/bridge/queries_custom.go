@@ -12,6 +12,7 @@ import (
 var ErrRefundReservationUnavailable = errors.New("refund reservation unavailable")
 
 type RefundPaymentInfoRow struct {
+	PaymentUUID      string
 	GatewayPaymentID string
 	AmountCents      int64
 	Status           string
@@ -19,9 +20,13 @@ type RefundPaymentInfoRow struct {
 }
 
 func (q *Queries) GetRefundPaymentInfo(ctx context.Context, paymentID string) (RefundPaymentInfoRow, error) {
-	const query = `SELECT gateway_payment_id, amount_cents, status, COALESCE(seller_id, '') FROM payment_requests WHERE uuid = $1::uuid`
+	const query = `
+SELECT uuid::text, COALESCE(gateway_payment_id, ''), amount_cents, status, COALESCE(seller_id, '') 
+FROM payment_requests 
+WHERE (uuid::text = $1 OR gateway_payment_id = $1)
+LIMIT 1`
 	var row RefundPaymentInfoRow
-	err := q.db.QueryRow(ctx, query, paymentID).Scan(&row.GatewayPaymentID, &row.AmountCents, &row.Status, &row.SellerID)
+	err := q.db.QueryRow(ctx, query, paymentID).Scan(&row.PaymentUUID, &row.GatewayPaymentID, &row.AmountCents, &row.Status, &row.SellerID)
 	return row, err
 }
 
@@ -66,10 +71,10 @@ WITH totals AS (
 	SELECT amount_cents, status FROM payment_requests WHERE uuid = $1::uuid FOR UPDATE
 )
 INSERT INTO payment_refunds (payment_request_uuid, idempotency_key, amount_cents, reason, status)
-SELECT $1::uuid, $2, $3, $4, 'processing'
+SELECT $1::uuid, $2, $3::bigint, $4, 'processing'
 FROM totals, payment
 WHERE payment.status IN ('succeeded', 'partially_refunded')
-  AND $3 > 0 AND totals.refunded + $3 <= payment.amount_cents
+  AND $3::bigint > 0 AND totals.refunded + $3::bigint <= payment.amount_cents
 RETURNING payment_request_uuid::text, idempotency_key, amount_cents, status, ''`
 	if err := q.db.QueryRow(ctx, insert, paymentID, idempotencyKey, amountCents, reason).Scan(&record.PaymentID, &record.IdempotencyKey, &record.AmountCents, &record.Status, &record.GatewayRefundID); err != nil {
 		return RefundRecordRow{}, ErrRefundReservationUnavailable
