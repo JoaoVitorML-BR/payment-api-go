@@ -92,6 +92,7 @@ func (p *PaymentRequestedProcessor) Handle(ctx context.Context, d amqp.Delivery)
 		Description:         fmt.Sprintf("consultoria online - %s", msg.PaymentID),
 		PayerEmail:          customerEmail(msg.Customer),
 		PayerName:           customerName(msg.Customer),
+		PayerPhone:          customerPhone(msg.Customer),
 		PayerTaxID:          customerTaxID(msg.Customer),
 		PayerAddress:        customerAddress(msg.Customer),
 		PayerCity:           customerCity(msg.Customer),
@@ -275,6 +276,13 @@ func customerEmail(customer *CustomerInfo) string {
 	}
 
 	return strings.TrimSpace(customer.Email)
+}
+func customerPhone(customer *CustomerInfo) string {
+	if customer == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(customer.Phone)
 }
 
 func customerTaxID(customer *CustomerInfo) string {
