@@ -26,6 +26,12 @@ func SetupRouter(paymentHandler *handler.PaymentHandler, oauthHandler *OAuthHand
 	router.POST("/webhook/mercadopago", func(c *gin.Context) {
 		paymentHandler.MercadoPagoWebhookHandler(c)
 	})
+	router.POST("/webhooks/mercadopago", func(c *gin.Context) {
+		paymentHandler.MercadoPagoWebhookHandler(c)
+	})
+	router.POST("/", func(c *gin.Context) {
+		paymentHandler.MercadoPagoWebhookHandler(c)
+	})
 
 	router.POST("/payment/refund", func(c *gin.Context) {
 		paymentHandler.RefundHandler(c)

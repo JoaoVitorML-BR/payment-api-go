@@ -69,6 +69,8 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 - Added unit coverage for the recovery path.
 - Added `MANUAL_TESTING.md` with the complete manual test sequence and acceptance criteria.
 - Started the Orders API migration in `payment-consumer`: Pix creation and lookup now use `order.Client`, `processing_mode=automatic`, `transactions.payments`, and `marketplace_fee`.
+- Added flexible JSON unmarshaling for `user_id` in `OAuthToken` to support both numeric and string IDs from Mercado Pago's OAuth API.
+- Updated `.env.example` files across `payment-request-api` and `payment-consumer` to include all required Mercado Pago environment variables (`MERCADO_PAGO_WEBHOOK_SECRET`, `MERCADO_PAGO_ACCESS_TOKEN`, `MERCADO_PAGO_WEBHOOK_URL`, `PIX_EXPIRATION_TIME`) and credential mappings.
 
 ## Still required
 
