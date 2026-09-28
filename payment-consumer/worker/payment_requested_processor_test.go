@@ -63,7 +63,6 @@ func nonRetryableErr() error {
 	return &mperror.ResponseError{StatusCode: 422, Message: "Invalid Tax ID"}
 }
 
-
 func TestIsRetryableGatewayError(t *testing.T) {
 	rErr := retryableErr()
 	if !paymentgateway.IsRetryableGatewayError(rErr) {
@@ -74,7 +73,6 @@ func TestIsRetryableGatewayError(t *testing.T) {
 		t.Errorf("expected nonRetryableErr (422) to NOT be retryable")
 	}
 }
-
 
 // ---------------------------------------------------------------------------
 // fakePaymentQueries — in-memory mock of the PaymentQueries interface
@@ -516,5 +514,3 @@ func TestHandle_MalformedMessageIsDiscarded(t *testing.T) {
 		t.Errorf("não esperava payment_attempts salvos para mensagem malformada, veio %d", db.attemptCount())
 	}
 }
-
-

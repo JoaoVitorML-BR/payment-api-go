@@ -108,11 +108,11 @@ func toOrderPaymentResult(o *order.Response) *paymentgateway.PaymentResult {
 	}
 	if len(o.Transactions.Payments) == 0 {
 		return &paymentgateway.PaymentResult{
-			GatewayPaymentID:  o.ID,
-			Status:            normalizeOrderStatus(o.Status),
-			RawStatus:         o.Status,
-			Currency:          o.Currency,
-			RawResponse:       mustJSON(o),
+			GatewayPaymentID: o.ID,
+			Status:           normalizeOrderStatus(o.Status),
+			RawStatus:        o.Status,
+			Currency:         o.Currency,
+			RawResponse:      mustJSON(o),
 		}
 	}
 	p := o.Transactions.Payments[0]
