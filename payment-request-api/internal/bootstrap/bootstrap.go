@@ -3,10 +3,8 @@ package bootstrap
 
 import (
 	"context"
-	"log"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/config"
@@ -42,10 +40,7 @@ func NewRouter(cfg *config.Config) *gin.Engine {
 		panic("Failed to initialize payment repository")
 	}
 
-	mpAccessToken := strings.TrimSpace(os.Getenv("MERCADO_PAGO_ACCESS_TOKEN"))
-	if mpAccessToken == "" {
-		log.Fatal("MERCADO_PAGO_ACCESS_TOKEN is required for webhook validation")
-	}
+	mpAccessToken := cfg.MercadoPagoAccessToken
 	var tokenStore *paymentmercadopago.EncryptedFileTokenStore
 	if cfg.MercadoPagoOAuthClientID != "" {
 		tokenStore, err = paymentmercadopago.NewEncryptedFileTokenStore(cfg.MercadoPagoOAuthTokenFile, cfg.MercadoPagoOAuthEncryptionKey)
