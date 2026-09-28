@@ -60,6 +60,7 @@ type RefundRepository interface {
 }
 
 type RefundPaymentInfo struct {
+	PaymentUUID      string
 	GatewayPaymentID string
 	AmountCents      int64
 	Status           string
@@ -151,7 +152,11 @@ func (s *PaymentService) ProcessRefund(ctx context.Context, req RefundRequest) e
 	if req.AmountCents > info.AmountCents {
 		return errors.New("refund amount exceeds original payment")
 	}
-	reservation, err := s.refundRepo.ReserveRefund(ctx, req.PaymentID, req.IdempotencyKey, req.AmountCents, req.Reason)
+	targetUUID := info.PaymentUUID
+	if targetUUID == "" {
+		targetUUID = req.PaymentID
+	}
+	reservation, err := s.refundRepo.ReserveRefund(ctx, targetUUID, req.IdempotencyKey, req.AmountCents, req.Reason)
 	if err != nil {
 		return fmt.Errorf("reserve refund: %w", err)
 	}
