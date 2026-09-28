@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -14,6 +15,7 @@ import (
 type Config struct {
 	Port                          string
 	Pool                          *pgxpool.Pool
+	MercadoPagoAccessToken        string
 	MercadoPagoWebhookSecret      string
 	MercadoPagoOAuthClientID      string
 	MercadoPagoOAuthClientSecret  string
@@ -57,6 +59,11 @@ func LoadConfig() (*Config, error) {
 	dbName := os.Getenv("DB_PS_DATABASE")
 	if dbName == "" {
 		dbName = "payment_request"
+	}
+
+	mercadoPagoAccessToken := strings.TrimSpace(os.Getenv("MERCADO_PAGO_ACCESS_TOKEN"))
+	if mercadoPagoAccessToken == "" {
+		return nil, fmt.Errorf("MERCADO_PAGO_ACCESS_TOKEN is required for webhook validation")
 	}
 
 	mercadoPagoWebhookSecret := os.Getenv("MERCADO_PAGO_WEBHOOK_SECRET")
@@ -109,6 +116,7 @@ func LoadConfig() (*Config, error) {
 	cfg := &Config{
 		Port:                          port,
 		Pool:                          pool,
+		MercadoPagoAccessToken:        mercadoPagoAccessToken,
 		MercadoPagoWebhookSecret:      mercadoPagoWebhookSecret,
 		MercadoPagoOAuthClientID:      oauthClientID,
 		MercadoPagoOAuthClientSecret:  oauthClientSecret,
