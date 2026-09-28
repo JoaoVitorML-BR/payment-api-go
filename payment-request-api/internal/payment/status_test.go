@@ -59,6 +59,30 @@ func TestNormalizeGatewayStatus(t *testing.T) {
 			wantErr:       false,
 		},
 		{
+			name:          "paid status (Orders API)",
+			gatewayStatus: "paid",
+			want:          "succeeded",
+			wantErr:       false,
+		},
+		{
+			name:          "action_required status (Orders API)",
+			gatewayStatus: "action_required",
+			want:          "pending",
+			wantErr:       false,
+		},
+		{
+			name:          "created status (Orders API)",
+			gatewayStatus: "created",
+			want:          "pending",
+			wantErr:       false,
+		},
+		{
+			name:          "expired status (Orders API)",
+			gatewayStatus: "expired",
+			want:          "canceled",
+			wantErr:       false,
+		},
+		{
 			name:          "unknown status",
 			gatewayStatus: "unknown_status_xyz",
 			want:          "",
