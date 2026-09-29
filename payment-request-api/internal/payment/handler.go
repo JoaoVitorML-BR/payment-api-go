@@ -98,6 +98,21 @@ func (h *PaymentHandler) GetPaymentClientSecretHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, paymentStatus)
 }
 
+func (h *PaymentHandler) GetPaymentStatusHandler(c *gin.Context) {
+	paymentID := strings.TrimSpace(c.Param("payment_id"))
+	if paymentID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "payment_id must be provided"})
+		return
+	}
+
+	statusComparison, err := h.service.GetPaymentStatusComparison(c.Request.Context(), paymentID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, statusComparison)
+}
+
 func (h *PaymentHandler) CreatePaymentRequestHandler(c *gin.Context) {
 	var req CreatePaymentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
