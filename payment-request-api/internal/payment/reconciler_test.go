@@ -23,6 +23,14 @@ func (m *mockRepoForReconciliation) GetPaymentClientSecret(ctx context.Context, 
 	return PaymentStatusResponse{}, nil
 }
 
+func (m *mockRepoForReconciliation) GetPaymentDetails(ctx context.Context, identifier string) (LocalPaymentStatus, error) {
+	return LocalPaymentStatus{
+		UUID:             identifier,
+		GatewayPaymentID: identifier,
+		Status:           "pending",
+	}, nil
+}
+
 func (m *mockRepoForReconciliation) UpdatePaymentStatus(ctx context.Context, paymentUUID string, status string, amountCents int64) (int64, error) {
 	return 1, nil
 }
