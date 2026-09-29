@@ -22,6 +22,15 @@ func normalizeGatewayStatus(gatewayStatus string) (string, error) {
 	case "pending", "in_process", "in_mediation", "action_required", "created":
 		return "pending", nil
 
+	case "refunded":
+		return "refunded", nil
+
+	case "partially_refunded":
+		return "partially_refunded", nil
+
+	case "charged_back":
+		return "failed", nil
+
 	default:
 		return "", fmt.Errorf(
 			"unknown Mercado Pago status: %q",
