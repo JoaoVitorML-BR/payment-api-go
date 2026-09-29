@@ -110,6 +110,31 @@ func (r *PaymentRepositoryDB) GetPaymentClientSecret(ctx context.Context, paymen
 	}, nil
 }
 
+func (r *PaymentRepositoryDB) GetPaymentDetails(ctx context.Context, identifier string) (LocalPaymentStatus, error) {
+	row, err := r.queries.GetPaymentDetails(ctx, strings.TrimSpace(identifier))
+	if err != nil {
+		return LocalPaymentStatus{}, err
+	}
+
+	return LocalPaymentStatus{
+		UUID:              row.UUID,
+		IdempotencyKey:    row.IdempotencyKey,
+		MerchantReference: row.MerchantReference,
+		AmountCents:       row.AmountCents,
+		Currency:          row.Currency,
+		PaymentMethod:     row.PaymentMethod,
+		Installments:      row.Installments,
+		Status:            row.Status,
+		FailureCode:       row.FailureCode,
+		FailureMessage:    row.FailureMessage,
+		Gateway:           row.Gateway,
+		GatewayPaymentID:  row.GatewayPaymentID,
+		SellerID:          row.SellerID,
+		CreatedAt:         row.CreatedAt,
+		UpdatedAt:         row.UpdatedAt,
+	}, nil
+}
+
 func (r *PaymentRepositoryDB) GetPaymentRequestByGatewayPaymentID(ctx context.Context, gatewayPaymentID string) (PaymentGatewayValidationData, error) {
 	row, err := r.queries.GetPaymentRequestByGatewayPaymentID(ctx, strings.TrimSpace(gatewayPaymentID))
 	if err != nil {
