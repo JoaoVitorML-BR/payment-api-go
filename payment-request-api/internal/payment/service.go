@@ -213,7 +213,7 @@ func (s *PaymentService) ProcessRefund(ctx context.Context, req RefundRequest) e
 
 func (s *PaymentService) ReconcileProcessingRefunds(ctx context.Context, limit int32) (int, error) {
 	if s.refundRepo == nil || s.refundGateway == nil {
-		return 0, errors.New("refund flow is not configured")
+		return 0, nil
 	}
 	items, err := s.refundRepo.ListProcessingRefunds(ctx, limit)
 	if err != nil {
@@ -251,7 +251,6 @@ func NewPaymentService(repo PaymentRepository, publisher events.PaymentRequested
 }
 
 func (s *PaymentService) GetPaymentClientSecret(ctx context.Context, paymentUUID string) (PaymentStatusResponse, error) {
-	fmt.Println("payment UUID received on service.go: ", paymentUUID)
 	return s.repo.GetPaymentClientSecret(ctx, paymentUUID)
 }
 

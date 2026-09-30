@@ -63,6 +63,15 @@ func (c *Client) CreatePayment(ctx context.Context, input paymentgateway.CreateP
 		ExternalReference: input.Metadata["payment_request_uuid"],
 		MarketPlaceFee:    marketplaceFee,
 		ExpirationTime:    "PT30M",
+		Items: []order.ItemsRequest{
+			{
+				Title:       input.Description,
+				UnitPrice:   fmt.Sprintf("%.2f", amount),
+				Quantity:    1,
+				CategoryID:  "services",
+				Description: input.Description,
+			},
+		},
 		Payer: &order.PayerRequest{
 			Email:     strings.TrimSpace(input.PayerEmail),
 			FirstName: firstName,

@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -22,14 +21,6 @@ func VerifySignature(signatureHeader string, requestID string, dataID string, no
 	if secret == "" {
 		return errors.New("mercado pago webhook secret is not configured")
 	}
-
-	log.Printf(
-		"[WEBHOOK-RAW] signature=%q requestID=%q dataID=%q secretLen=%d",
-		signatureHeader,
-		requestID,
-		dataID,
-		len(secret),
-	)
 
 	parts, err := parseSignatureHeader(signatureHeader)
 	if err != nil {
@@ -56,7 +47,6 @@ func VerifySignature(signatureHeader string, requestID string, dataID string, no
 	}
 
 	requestID = strings.TrimSpace(requestID)
-
 	dataID = strings.ToLower(strings.TrimSpace(dataID))
 
 	if requestID == "" || dataID == "" {
@@ -76,16 +66,6 @@ func VerifySignature(signatureHeader string, requestID string, dataID string, no
 	h.Write([]byte(manifest))
 
 	expectedSignature := hex.EncodeToString(h.Sum(nil))
-
-	log.Printf(
-		"[WEBHOOK-DEBUG] dataID='%s', requestID='%s', ts='%s', manifest='%s', expected='%s', received='%s'",
-		dataID,
-		requestID,
-		parts["ts"],
-		manifest,
-		expectedSignature,
-		received,
-	)
 
 	if hmac.Equal([]byte(expectedSignature), []byte(received)) {
 		return nil
