@@ -26,7 +26,12 @@ go.work.sum
 
 # env file
 .env
+.env.*
+!.env.example
 .cache
+*.enc
+data/
+
 
 # Editor/IDE
 # .idea/
