@@ -14,12 +14,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error loading config: %v", err)
 	}
+	defer cfg.Pool.Close()
 
 	router := bootstrap.NewRouter(cfg)
 
 	if err := server.Run(cfg, router); err != nil {
-		cfg.Pool.Close()
-		log.Fatalf("Server error: %v", err)
+		log.Fatalf("Server failed to run: %v", err)
 	}
-	cfg.Pool.Close()
 }
+
