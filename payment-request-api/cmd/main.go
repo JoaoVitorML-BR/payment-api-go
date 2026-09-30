@@ -2,6 +2,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-request-api/internal/bootstrap"
@@ -10,16 +11,25 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatalf("Server error: %v", err)
+	}
+}
+
+func run() error {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("Error loading config: %v", err)
+		return fmt.Errorf("loading config: %w", err)
 	}
 	defer cfg.Pool.Close()
 
 	router := bootstrap.NewRouter(cfg)
 
 	if err := server.Run(cfg, router); err != nil {
-		log.Fatalf("Server failed to run: %v", err)
+		return fmt.Errorf("running server: %w", err)
 	}
+
+	return nil
 }
+
 
