@@ -31,6 +31,42 @@ type PaymentStatusResponse struct {
 	PixExpirationAt  *time.Time `json:"pix_expiration_at,omitempty"`
 }
 
+type LocalPaymentStatus struct {
+	UUID              string    `json:"uuid"`
+	IdempotencyKey    string    `json:"idempotency_key"`
+	MerchantReference string    `json:"merchant_reference,omitempty"`
+	AmountCents       int64     `json:"amount_cents"`
+	Currency          string    `json:"currency"`
+	PaymentMethod     string    `json:"payment_method"`
+	Installments      int32     `json:"installments,omitempty"`
+	Status            string    `json:"status"`
+	FailureCode       string    `json:"failure_code,omitempty"`
+	FailureMessage    string    `json:"failure_message,omitempty"`
+	Gateway           string    `json:"gateway"`
+	GatewayPaymentID  string    `json:"gateway_payment_id,omitempty"`
+	SellerID          string    `json:"seller_id,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+type GatewayPaymentStatus struct {
+	Gateway           string `json:"gateway"`
+	GatewayPaymentID  string `json:"gateway_payment_id"`
+	RawStatus         string `json:"raw_status"`
+	NormalizedStatus  string `json:"normalized_status"`
+	AmountCents       int64  `json:"amount_cents"`
+	Currency          string `json:"currency"`
+	ExternalReference string `json:"external_reference,omitempty"`
+}
+
+type PaymentComparisonStatusResponse struct {
+	PaymentID   string                `json:"payment_id"`
+	InSync      bool                  `json:"in_sync"`
+	Discrepancy string                `json:"discrepancy,omitempty"`
+	Local       LocalPaymentStatus    `json:"local"`
+	Gateway     *GatewayPaymentStatus `json:"gateway,omitempty"`
+}
+
 type ReconciliationItem struct {
 	GatewayPaymentID string
 	PaymentUUID      string
@@ -41,6 +77,7 @@ type PaymentRepository interface {
 	// It allows the caller to signal that the operation should be aborted if it takes too long or if the client disconnects.
 	CreatePaymentRequest(ctx context.Context, req CreatePaymentRequest) (CreatePaymentResponse, error)
 	GetPaymentClientSecret(ctx context.Context, paymentUUID string) (PaymentStatusResponse, error)
+	GetPaymentDetails(ctx context.Context, identifier string) (LocalPaymentStatus, error)
 	UpdatePaymentStatus(ctx context.Context, paymentUUID string, status string, amountCents int64) (int64, error)
 	GetPaymentRequestByGatewayPaymentID(ctx context.Context, gatewayPaymentID string) (PaymentGatewayValidationData, error)
 	UpdatePaymentStatusByGatewayPaymentID(
@@ -216,6 +253,72 @@ func NewPaymentService(repo PaymentRepository, publisher events.PaymentRequested
 func (s *PaymentService) GetPaymentClientSecret(ctx context.Context, paymentUUID string) (PaymentStatusResponse, error) {
 	fmt.Println("payment UUID received on service.go: ", paymentUUID)
 	return s.repo.GetPaymentClientSecret(ctx, paymentUUID)
+}
+
+func (s *PaymentService) GetPaymentStatusComparison(ctx context.Context, identifier string) (*PaymentComparisonStatusResponse, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return nil, errors.New("payment identifier is required")
+	}
+
+	local, err := s.repo.GetPaymentDetails(ctx, identifier)
+	if err != nil {
+		return nil, fmt.Errorf("local payment not found: %w", err)
+	}
+
+	res := &PaymentComparisonStatusResponse{
+		PaymentID: identifier,
+		Local:     local,
+		InSync:    false,
+	}
+
+	if local.GatewayPaymentID == "" {
+		res.Discrepancy = "payment has no gateway_payment_id linked in database"
+		return res, nil
+	}
+
+	if s.gatewayReader == nil {
+		res.Discrepancy = "gateway reader is not configured"
+		return res, nil
+	}
+
+	gwDetails, err := s.gatewayReader.GetPayment(ctx, local.GatewayPaymentID, local.SellerID)
+	if err != nil {
+		res.Discrepancy = fmt.Sprintf("failed to fetch payment from gateway: %v", err)
+		return res, nil
+	}
+
+	normalizedStatus, normErr := normalizeGatewayStatus(gwDetails.Status)
+	gwStatus := &GatewayPaymentStatus{
+		Gateway:           local.Gateway,
+		GatewayPaymentID:  gwDetails.GatewayPaymentID,
+		RawStatus:         gwDetails.Status,
+		NormalizedStatus:  normalizedStatus,
+		AmountCents:       gwDetails.AmountCents,
+		Currency:          gwDetails.Currency,
+		ExternalReference: gwDetails.ExternalReference,
+	}
+	if normErr != nil {
+		gwStatus.NormalizedStatus = "unknown"
+	}
+	res.Gateway = gwStatus
+
+	switch {
+	case normErr != nil:
+		res.InSync = false
+		res.Discrepancy = fmt.Sprintf("gateway returned unrecognized status: %s", gwDetails.Status)
+	case local.Status != normalizedStatus:
+		res.InSync = false
+		res.Discrepancy = fmt.Sprintf("status mismatch: local is %q, gateway is %q (raw: %q)", local.Status, normalizedStatus, gwDetails.Status)
+	case local.AmountCents != gwDetails.AmountCents:
+		res.InSync = false
+		res.Discrepancy = fmt.Sprintf("amount mismatch: local is %d cents, gateway is %d cents", local.AmountCents, gwDetails.AmountCents)
+	default:
+		res.InSync = true
+		res.Discrepancy = ""
+	}
+
+	return res, nil
 }
 
 func (s *PaymentService) UpdatePaymentStatus(ctx context.Context, paymentID string, status string, amountCents int64) error {

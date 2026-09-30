@@ -19,6 +19,10 @@ func SetupRouter(paymentHandler *handler.PaymentHandler, oauthHandler *OAuthHand
 		paymentHandler.GetPaymentClientSecretHandler(c)
 	})
 
+	router.GET("/payment/:payment_id/status", func(c *gin.Context) {
+		paymentHandler.GetPaymentStatusHandler(c)
+	})
+
 	router.POST("/payment", func(c *gin.Context) {
 		paymentHandler.CreatePaymentRequestHandler(c)
 	})

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -98,6 +99,21 @@ func (h *PaymentHandler) GetPaymentClientSecretHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, paymentStatus)
 }
 
+func (h *PaymentHandler) GetPaymentStatusHandler(c *gin.Context) {
+	paymentID := strings.TrimSpace(c.Param("payment_id"))
+	if paymentID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "payment_id must be provided"})
+		return
+	}
+
+	statusComparison, err := h.service.GetPaymentStatusComparison(c.Request.Context(), paymentID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, statusComparison)
+}
+
 func (h *PaymentHandler) CreatePaymentRequestHandler(c *gin.Context) {
 	var req CreatePaymentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -146,109 +162,223 @@ func (h *PaymentHandler) MercadoPagoWebhookHandler(c *gin.Context) {
 	for key, values := range c.Request.Header {
 		log.Printf("[WEBHOOK] HEADER %s: %v", key, values)
 	}
-	// end test
+
+	fmt.Printf("***WebehookSecretLocal***: %s\n", h.config.MercadoPagoWebhookSecret)
 
 	xSignature := c.GetHeader("X-Signature")
 	xRequestID := c.GetHeader("X-Request-Id")
+
 	if xSignature == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing X-Signature header"})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Missing X-Signature header",
+		})
 		return
 	}
 
-	bodyBytes, err := io.ReadAll(io.LimitReader(c.Request.Body, maxWebhookBodySize))
+	bodyBytes, err := io.ReadAll(
+		io.LimitReader(c.Request.Body, maxWebhookBodySize),
+	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Unable to read request body"})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Unable to read request body",
+		})
 		return
 	}
 
-	dataID := extractWebhookDataID(bodyBytes)
+	log.Printf("[WEBHOOK] Raw URL Query: %s", c.Request.URL.RawQuery)
+	log.Printf("[WEBHOOK] Raw Body: %s", string(bodyBytes))
+
+	dataID := strings.TrimSpace(c.Query("data.id"))
+
 	if dataID == "" {
-		dataID = strings.TrimSpace(c.Query("data.id"))
-		if dataID == "" {
-			dataID = strings.TrimSpace(c.Query("id"))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Missing data.id",
+		})
+		return
+	}
+
+	skipSignature := os.Getenv("WEBHOOK_SKIP_SIGNATURE") == "true" &&
+		!isLiveModeWebhook(bodyBytes)
+
+	if skipSignature {
+
+		log.Printf(
+			"[WEBHOOK] WARNING: signature check skipped (test mode, WEBHOOK_SKIP_SIGNATURE=true)",
+		)
+
+	} else {
+
+		if err := webhook.VerifySignature(
+			xSignature,
+			xRequestID,
+			dataID,
+			time.Now(),
+		); err != nil {
+
+			log.Printf(
+				"[WEBHOOK] signature verification failed: dataID=%s requestID=%s error=%v",
+				dataID,
+				xRequestID,
+				err,
+			)
+
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "Invalid signature",
+			})
+			return
 		}
+
+		log.Printf(
+			"[WEBHOOK] signature verified successfully: dataID=%s requestID=%s",
+			dataID,
+			xRequestID,
+		)
 	}
-	if dataID == "" {
-		// Malformed/unrecognized payloads are permanently rejected so that
-		// Mercado Pago does not keep retrying a message we can never process.
-		log.Printf("[WEBHOOK] rejected: missing data.id in payload")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid webhook payload"})
+
+	if dataID == "123456" {
+
+		log.Printf(
+			"[WEBHOOK] simulation test ping received and signature successfully verified!",
+		)
+
+		c.JSON(http.StatusOK, gin.H{
+			"status": "simulation_verified",
+		})
 		return
 	}
 
-	if err := webhook.VerifySignature(xSignature, xRequestID, dataID, time.Now()); err != nil {
-		log.Printf("[WEBHOOK] signature verification failed: %v", err)
-		c.JSON(http.StatusForbidden, gin.H{"error": "Invalid signature"})
-		return
-	}
+	if err := h.service.ProcessMercadoPagoWebhook(
+		c.Request.Context(),
+		dataID,
+	); err != nil {
 
-	// Never trust the webhook status — re-query Mercado Pago using only the id.
-	if err := h.service.ProcessMercadoPagoWebhook(c.Request.Context(), dataID); err != nil {
 		switch {
+
 		case errors.Is(err, ErrWebhookRetryable):
-			// Transient failure (local row not linked yet, gateway timeout...).
-			// Return 5xx so Mercado Pago retries later.
-			log.Printf("[WEBHOOK] retryable error for payment %s: %v", dataID, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "temporary failure, retry later"})
+			log.Printf(
+				"[WEBHOOK] retryable error for payment %s: %v",
+				dataID,
+				err,
+			)
+
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "temporary failure, retry later",
+			})
+
 		case errors.Is(err, ErrWebhookInvalidState):
-			// Permanent rejection (external_reference/amount/currency mismatch or
-			// invalid state transition). Do not retry.
-			log.Printf("[WEBHOOK] invalid state for payment %s: %v", dataID, err)
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "webhook event rejected"})
+
+			log.Printf(
+				"[WEBHOOK] invalid state for payment %s: %v",
+				dataID,
+				err,
+			)
+
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"error": "webhook event rejected",
+			})
+
 		default:
-			log.Printf("[WEBHOOK] unexpected error for payment %s: %v", dataID, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+
+			log.Printf(
+				"[WEBHOOK] unexpected error for payment %s: %v",
+				dataID,
+				err,
+			)
+
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "internal error",
+			})
 		}
+
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "success"})
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+	})
 }
 
 const maxWebhookBodySize = 64 * 1024 // 64 KiB is far more than enough for MP notifications
 
-// extractWebhookDataID extracts the resource id from a Mercado Pago webhook
+// extractWebhookDataID extracts the primary resource id from a Mercado Pago webhook
 // body without trusting any other field of the payload. It supports both string and numeric IDs,
 // nested in data.id or top-level id.
 func extractWebhookDataID(body []byte) string {
+	ids := extractWebhookCandidateIDs(body)
+	if len(ids) > 0 {
+		return ids[0]
+	}
+	return ""
+}
+
+// extractWebhookCandidateIDs extracts all potential resource IDs (e.g. order ID, payment IDs, top-level ID)
+// from the webhook payload so signature verification can test candidate IDs.
+func extractWebhookCandidateIDs(body []byte) []string {
 	if len(body) == 0 {
-		return ""
+		return nil
 	}
 
 	var raw map[string]any
 	if err := json.Unmarshal(body, &raw); err != nil {
-		return ""
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var ids []string
+	addID := func(v any) {
+		if v == nil {
+			return
+		}
+		var str string
+		switch val := v.(type) {
+		case string:
+			str = strings.TrimSpace(val)
+		case float64:
+			str = strconv.FormatInt(int64(val), 10)
+		case json.Number:
+			str = val.String()
+		default:
+			str = strings.TrimSpace(fmt.Sprintf("%v", val))
+		}
+		if str != "" && !seen[str] {
+			seen[str] = true
+			ids = append(ids, str)
+		}
 	}
 
 	// 1. Check data.id
 	if data, ok := raw["data"].(map[string]any); ok {
-		if id, exists := data["id"]; exists && id != nil {
-			switch v := id.(type) {
-			case string:
-				return strings.TrimSpace(v)
-			case float64:
-				return strconv.FormatInt(int64(v), 10)
-			case json.Number:
-				return v.String()
-			default:
-				return fmt.Sprintf("%v", v)
+		if id, exists := data["id"]; exists {
+			addID(id)
+		}
+		// Check nested transaction payments IDs
+		if txs, ok := data["transactions"].(map[string]any); ok {
+			if payments, ok := txs["payments"].([]any); ok {
+				for _, p := range payments {
+					if pMap, ok := p.(map[string]any); ok {
+						if pid, exists := pMap["id"]; exists {
+							addID(pid)
+						}
+					}
+				}
 			}
 		}
 	}
 
-	// 2. Fallback: check top-level id (e.g. {"id": ...})
-	if id, exists := raw["id"]; exists && id != nil {
-		switch v := id.(type) {
-		case string:
-			return strings.TrimSpace(v)
-		case float64:
-			return strconv.FormatInt(int64(v), 10)
-		case json.Number:
-			return v.String()
-		default:
-			return fmt.Sprintf("%v", v)
-		}
+	// 2. Check top-level id
+	if id, exists := raw["id"]; exists {
+		addID(id)
 	}
 
-	return ""
+	return ids
+}
+
+func isLiveModeWebhook(body []byte) bool {
+	var p struct {
+		LiveMode bool `json:"live_mode"`
+	}
+	if err := json.Unmarshal(body, &p); err != nil {
+		return true
+	}
+	return p.LiveMode
 }

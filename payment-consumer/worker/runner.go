@@ -41,6 +41,7 @@ func connectRabbitMQ(uri string, maxAttempts int) (*amqp.Connection, error) {
 type CustomerInfo struct {
 	Name       string `json:"name"`
 	Email      string `json:"email"`
+	Phone      string `json:"phone"`
 	TaxID      string `json:"tax_id"` // CPF or CNPJ
 	Address    string `json:"address"`
 	City       string `json:"city"`

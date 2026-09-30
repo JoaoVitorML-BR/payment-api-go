@@ -23,6 +23,18 @@ func (m *mockConcurrentRepo) GetPaymentClientSecret(ctx context.Context, payment
 	return PaymentStatusResponse{}, nil
 }
 
+func (m *mockConcurrentRepo) GetPaymentDetails(ctx context.Context, identifier string) (LocalPaymentStatus, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return LocalPaymentStatus{
+		UUID:             identifier,
+		GatewayPaymentID: identifier,
+		Status:           m.status,
+		AmountCents:      1500,
+		Currency:         "BRL",
+	}, nil
+}
+
 func (m *mockConcurrentRepo) UpdatePaymentStatus(ctx context.Context, paymentUUID string, status string, amountCents int64) (int64, error) {
 	return 1, nil
 }

@@ -20,6 +20,7 @@ type CreatePaymentInput struct {
 	Description         string
 	PayerEmail          string
 	PayerName           string
+	PayerPhone          string
 	PayerTaxID          string // CPF/CNPJ, required for Pix in Mercado Pago
 	PayerAddress        string
 	PayerCity           string
