@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -16,11 +17,19 @@ import (
 const maxSignatureAge = 5 * time.Minute
 
 func VerifySignature(signatureHeader string, requestID string, dataID string, now time.Time) error {
+	secret := strings.Trim(os.Getenv("MERCADO_PAGO_WEBHOOK_SECRET"), "\"' \t\r\n")
 
-	secret := os.Getenv("MERCADO_PAGO_WEBHOOK_SECRET")
-	if strings.TrimSpace(secret) == "" {
+	if secret == "" {
 		return errors.New("mercado pago webhook secret is not configured")
 	}
+
+	log.Printf(
+		"[WEBHOOK-RAW] signature=%q requestID=%q dataID=%q secretLen=%d",
+		signatureHeader,
+		requestID,
+		dataID,
+		len(secret),
+	)
 
 	parts, err := parseSignatureHeader(signatureHeader)
 	if err != nil {
@@ -32,17 +41,29 @@ func VerifySignature(signatureHeader string, requestID string, dataID string, no
 		return fmt.Errorf("invalid ts in x-signature: %w", err)
 	}
 
-	tsTime := time.Unix(ts, 0).UTC()
+	var tsTime time.Time
+
+	if ts > 1_000_000_000_000 {
+		tsTime = time.UnixMilli(ts).UTC()
+	} else {
+		tsTime = time.Unix(ts, 0).UTC()
+	}
+
 	age := now.UTC().Sub(tsTime)
+
 	if age < -maxSignatureAge || age > maxSignatureAge {
 		return errors.New("webhook signature expired")
 	}
 
 	requestID = strings.TrimSpace(requestID)
-	dataID = strings.TrimSpace(dataID)
+
+	dataID = strings.ToLower(strings.TrimSpace(dataID))
+
 	if requestID == "" || dataID == "" {
 		return errors.New("missing request id or data.id for signature verification")
 	}
+
+	received := strings.ToLower(parts["v1"])
 
 	manifest := fmt.Sprintf(
 		"id:%s;request-id:%s;ts:%s;",
@@ -55,13 +76,22 @@ func VerifySignature(signatureHeader string, requestID string, dataID string, no
 	h.Write([]byte(manifest))
 
 	expectedSignature := hex.EncodeToString(h.Sum(nil))
-	received := strings.ToLower(parts["v1"])
 
-	if !hmac.Equal([]byte(expectedSignature), []byte(received)) {
-		return errors.New("invalid signature")
+	log.Printf(
+		"[WEBHOOK-DEBUG] dataID='%s', requestID='%s', ts='%s', manifest='%s', expected='%s', received='%s'",
+		dataID,
+		requestID,
+		parts["ts"],
+		manifest,
+		expectedSignature,
+		received,
+	)
+
+	if hmac.Equal([]byte(expectedSignature), []byte(received)) {
+		return nil
 	}
 
-	return nil
+	return errors.New("invalid signature")
 }
 
 func parseSignatureHeader(signatureHeader string) (map[string]string, error) {
