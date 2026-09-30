@@ -29,7 +29,6 @@ func computeOfficialHash(dataID, requestID, ts, secret string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-
 func TestVerifySignature_OfficialCompliance(t *testing.T) {
 	secret := "my_mercado_pago_secret_key"
 	os.Setenv("MERCADO_PAGO_WEBHOOK_SECRET", secret)
@@ -100,4 +99,3 @@ func TestVerifySignature_OfficialCompliance(t *testing.T) {
 		}
 	})
 }
-
