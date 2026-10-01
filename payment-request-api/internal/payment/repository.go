@@ -4,7 +4,6 @@ package payment
 import (
 	"context"
 	"errors"
-	"log"
 	"strings"
 	"time"
 
@@ -88,7 +87,6 @@ func (r *PaymentRepositoryDB) GetPaymentClientSecret(ctx context.Context, paymen
 	parsedUUID := parseStringToUUID(paymentUUID)
 
 	row, err := r.queries.GetPaymentClientSecret(ctx, parsedUUID)
-	log.Printf("Fetching payment status for payment: %s, result: %v", paymentUUID, row)
 	if err != nil {
 		return PaymentStatusResponse{}, err
 	}
