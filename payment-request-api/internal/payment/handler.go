@@ -240,6 +240,39 @@ func (h *PaymentHandler) MercadoPagoWebhookHandler(c *gin.Context) {
 		return
 	}
 
+	topic := strings.TrimSpace(c.Query("topic"))
+	if topic == "" {
+		topic = strings.TrimSpace(c.Query("type"))
+	}
+	action := strings.TrimSpace(c.Query("action"))
+	if len(bodyBytes) > 0 {
+		var rawMap map[string]any
+		if err := json.Unmarshal(bodyBytes, &rawMap); err == nil {
+			if t, ok := rawMap["topic"].(string); ok && topic == "" {
+				topic = strings.TrimSpace(t)
+			}
+			if t, ok := rawMap["type"].(string); ok && topic == "" {
+				topic = strings.TrimSpace(t)
+			}
+			if a, ok := rawMap["action"].(string); ok && action == "" {
+				action = strings.TrimSpace(a)
+			}
+		}
+	}
+
+	if topic == "mp-connect" || topic == "topic_application_linking" || strings.HasPrefix(action, "application.") {
+		log.Printf(
+			"[WEBHOOK] OAuth mp-connect notification received: topic=%s action=%s dataID=%s",
+			topic,
+			action,
+			dataID,
+		)
+		c.JSON(http.StatusOK, gin.H{
+			"status": "received",
+		})
+		return
+	}
+
 	if err := h.service.ProcessMercadoPagoWebhook(
 		c.Request.Context(),
 		dataID,
