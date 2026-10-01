@@ -3,7 +3,6 @@ package worker
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -72,8 +71,6 @@ func StartWorker(ctx context.Context, pool *pgxpool.Pool, gateway paymentgateway
 	failOnError(err, "Failed to open a channel")
 	defer ch.Close()
 
-	fmt.Println("channel opened successfully: ", ch)
-
 	q, err := ch.QueueDeclare(
 		cfg.RabbitmqQueue, // name
 		true,              // durability
@@ -86,8 +83,6 @@ func StartWorker(ctx context.Context, pool *pgxpool.Pool, gateway paymentgateway
 	)
 	failOnError(err, "Failed to declare a queue")
 
-	fmt.Println("Queue declared successfully: ", q)
-
 	consumerTag := "payment-consumer"
 	msgs, err := ch.Consume(
 		q.Name, // queue
@@ -99,7 +94,7 @@ func StartWorker(ctx context.Context, pool *pgxpool.Pool, gateway paymentgateway
 		nil,   // args
 	)
 	failOnError(err, "Failed to register a consumer")
-	fmt.Println("message from channel consumer: ", msgs)
+	log.Printf("[INFO] Consumer registered on queue %s", q.Name)
 
 	queries := bridge.New(pool)
 	processor := NewPaymentRequestedProcessor(queries, gateway, cfg)
@@ -108,10 +103,10 @@ func StartWorker(ctx context.Context, pool *pgxpool.Pool, gateway paymentgateway
 	go func() {
 		defer wg.Done()
 		for d := range msgs {
-			log.Printf("Received a message: %s", d.Body)
+			log.Printf("[INFO] Received payment message (delivery_tag=%d, routing_key=%s)", d.DeliveryTag, d.RoutingKey)
 			err := processor.Handle(context.Background(), d)
 			if err != nil {
-				log.Printf("failed to handle payment requested message: %v", err)
+				log.Printf("[ERROR] failed to handle payment requested message: %v", err)
 			}
 			ackOrNack(d, err)
 		}
