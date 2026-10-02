@@ -71,6 +71,25 @@ sequenceDiagram
     autonumber
     actor User as Cliente / App
     participant API as payment-request-api
+    participant DB as PostgreSQL
+    participant RMQ as RabbitMQ
+    participant Worker as payment-consumer
+    participant MP as Mercado Pago
+
+    User->>API: POST /payment (amount, currency, customer, method)
+    API->>DB: INSERT payment_requests (status='pending')
+    API->>RMQ: Publica evento payment.requested.v1
+    API-->>User: 202 Accepted (payment_id UUID)
+
+    RMQ->>Worker: Consome evento payment.requested.v1
+    Worker->>MP: POST /v1/orders ou /v1/payments (Pix/Card)
+    MP-->>Worker: Resposta (gateway_payment_id, qr_code, emv)
+    Worker->>DB: UPDATE payment_requests (gateway_id, attempts, status)
+    
+    User->>API: GET /payment/:payment_id/status (Polling)
+    API->>DB: SELECT status, qr_code FROM payment_requests
+    API-->>User: 200 OK (status, qr_code_base64)
+```
 
 ### 2. Fluxo de Notificação Webhook & Segurança HMAC-SHA256
 
@@ -85,9 +104,9 @@ sequenceDiagram
     participant MPAPI as Mercado Pago API (GET /v1/orders)
     participant DB as PostgreSQL
 
-    MP->>WH: POST /payment/webhook/mercadopago (X-Signature, X-Request-Id, ?data.id=ORD123)
+    MP->>WH: POST /webhook/mercadopago (X-Signature, X-Request-Id, ?data.id=ORD123)
     WH->>Sec: Valida Manifest (id + request-id + ts) com Webhook Secret
-    alt Assinatura Inválida / Expirada (> 5 min)
+    alt Assinatura Inválida ou Expirada (> 5 min)
         Sec-->>WH: Erro de Validação
         WH-->>MP: 403 Forbidden
     else Assinatura Válida
@@ -127,14 +146,11 @@ sequenceDiagram
             API-->>Consult: 500 / 400 Erro no Gateway
         else Gateway Sucesso
             MP-->>API: Refund ID Confirmado
-            API->>DB: UPDATE payment_refunds (status='succeeded') + UPDATE payment_requests (status='partially_refunded'|'refunded')
+            API->>DB: UPDATE payment_refunds (status='succeeded') + UPDATE payment_requests (status='partially_refunded' ou 'refunded')
             API-->>Consult: 200 OK (Refund Processado)
         end
     end
 ```
-
-    participant DB as PostgreSQL
-    participant RMQ as RabbitMQ
 
 ### 4. Fluxo OAuth do Vendedor & Armazenamento Cifrado (AES-256-GCM)
 
@@ -157,7 +173,7 @@ sequenceDiagram
     API->>MP: POST /oauth/token (code + client_id + client_secret)
     MP-->>API: Tokens (access_token, refresh_token, user_id)
     API->>Store: Cifra payload com chave 256-bit (AES-GCM Nonce) e grava em disco (0600)
-    API-->>Seller: 200 OK (seller_id conectado; tokens ocultados)
+    API-->>Seller: 200 OK (seller_id conectado, tokens ocultados)
 ```
 
 ### 5. Worker de Reconciliação Periódica (Background)
