@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +23,13 @@ type Config struct {
 	MercadoPagoOAuthRedirectURI   string
 	MercadoPagoOAuthTokenFile     string
 	MercadoPagoOAuthEncryptionKey string
+	RateLimitEnabled              bool
+	RateLimitPaymentRPM           int
+	RateLimitPaymentBurst         int
+	RateLimitStatusRPM            int
+	RateLimitStatusBurst          int
+	RateLimitRefundRPM            int
+	RateLimitRefundBurst          int
 }
 
 func LoadConfig() (*Config, error) {
@@ -113,6 +121,53 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
+	rateLimitEnabled := true
+	if os.Getenv("RATE_LIMIT_ENABLED") == "false" {
+		rateLimitEnabled = false
+	}
+
+	rateLimitPaymentRPM := 30
+	if val := os.Getenv("RATE_LIMIT_PAYMENT_RPM"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil && n > 0 {
+			rateLimitPaymentRPM = n
+		}
+	}
+
+	rateLimitPaymentBurst := 5
+	if val := os.Getenv("RATE_LIMIT_PAYMENT_BURST"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil && n > 0 {
+			rateLimitPaymentBurst = n
+		}
+	}
+
+	rateLimitStatusRPM := 120
+	if val := os.Getenv("RATE_LIMIT_STATUS_RPM"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil && n > 0 {
+			rateLimitStatusRPM = n
+		}
+	}
+
+	rateLimitStatusBurst := 15
+	if val := os.Getenv("RATE_LIMIT_STATUS_BURST"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil && n > 0 {
+			rateLimitStatusBurst = n
+		}
+	}
+
+	rateLimitRefundRPM := 10
+	if val := os.Getenv("RATE_LIMIT_REFUND_RPM"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil && n > 0 {
+			rateLimitRefundRPM = n
+		}
+	}
+
+	rateLimitRefundBurst := 3
+	if val := os.Getenv("RATE_LIMIT_REFUND_BURST"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil && n > 0 {
+			rateLimitRefundBurst = n
+		}
+	}
+
 	cfg := &Config{
 		Port:                          port,
 		Pool:                          pool,
@@ -123,6 +178,13 @@ func LoadConfig() (*Config, error) {
 		MercadoPagoOAuthRedirectURI:   oauthRedirectURI,
 		MercadoPagoOAuthTokenFile:     oauthTokenFile,
 		MercadoPagoOAuthEncryptionKey: oauthEncryptionKey,
+		RateLimitEnabled:              rateLimitEnabled,
+		RateLimitPaymentRPM:           rateLimitPaymentRPM,
+		RateLimitPaymentBurst:         rateLimitPaymentBurst,
+		RateLimitStatusRPM:            rateLimitStatusRPM,
+		RateLimitStatusBurst:          rateLimitStatusBurst,
+		RateLimitRefundRPM:            rateLimitRefundRPM,
+		RateLimitRefundBurst:          rateLimitRefundBurst,
 	}
 	return cfg, nil
 }
