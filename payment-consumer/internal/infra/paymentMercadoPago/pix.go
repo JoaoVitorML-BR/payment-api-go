@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/JoaoVitorML-BR/payment-api-go/payment-consumer/internal/infra/paymentgateway"
 	"github.com/mercadopago/sdk-go/pkg/config"
@@ -24,10 +25,15 @@ func (c *Client) CreatePayment(ctx context.Context, input paymentgateway.CreateP
 	ctx = requestoptions.WithIdempotencyKey(ctx, input.IdempotencyKey)
 
 	firstName, lastName := splitFullName(input.PayerName)
-	identificationType := identificationTypeForTaxID(input.PayerTaxID)
+	cleanTaxID := cleanDigits(input.PayerTaxID)
+	identificationType := identificationTypeForTaxID(cleanTaxID)
 	if identificationType == "" {
 		return nil, fmt.Errorf("paymentmercadopago: payer tax id must be a valid CPF or CNPJ for pix payments")
 	}
+
+	streetName, streetNumber := parseStreetAndNumber(input.PayerAddress)
+	areaCode, phoneNumber := parsePhone(input.PayerPhone)
+	zipCode := cleanDigits(input.PayerPostalCode)
 
 	sdkConfig := c.cfg
 	if strings.TrimSpace(input.SellerID) != "" {
@@ -54,6 +60,15 @@ func (c *Client) CreatePayment(ctx context.Context, input paymentgateway.CreateP
 		marketplaceFee = fmt.Sprintf("%.2f", float64(input.MarketplaceFeeCents)/100)
 	}
 
+	itemTitle := strings.TrimSpace(input.Description)
+	if itemTitle == "" {
+		itemTitle = "Serviço de Consultoria"
+	}
+
+	now := time.Now().UTC()
+	regDate := now.AddDate(-1, 0, 0).Format("2006-01-02T15:04:05.000-07:00")
+	lastPurchaseDate := now.Format("2006-01-02T15:04:05.000-07:00")
+
 	request := order.Request{
 		Type:              "online",
 		ProcessingMode:    "automatic",
@@ -63,20 +78,44 @@ func (c *Client) CreatePayment(ctx context.Context, input paymentgateway.CreateP
 		ExternalReference: input.Metadata["payment_request_uuid"],
 		MarketPlaceFee:    marketplaceFee,
 		ExpirationTime:    "PT30M",
+		Config: &order.ConfigRequest{
+			StatementDescriptor: "CONSULTORIA",
+		},
+		Items: []order.ItemsRequest{
+			{
+				Title:        itemTitle,
+				UnitPrice:    fmt.Sprintf("%.2f", amount),
+				Quantity:     1,
+				CategoryID:   "services",
+				Description:  itemTitle,
+				ExternalCode: "ITEM-001",
+			},
+		},
 		Payer: &order.PayerRequest{
 			Email:     strings.TrimSpace(input.PayerEmail),
 			FirstName: firstName,
 			LastName:  lastName,
 			Identification: &order.IdentificationRequest{
 				Type:   identificationType,
-				Number: strings.TrimSpace(input.PayerTaxID),
+				Number: cleanTaxID,
+			},
+			Phone: &order.PhoneRequest{
+				AreaCode: areaCode,
+				Number:   phoneNumber,
 			},
 			Address: &order.PayerAddressRequest{
-				City:       strings.TrimSpace(input.PayerCity),
-				State:      strings.TrimSpace(input.PayerState),
-				ZipCode:    strings.TrimSpace(input.PayerPostalCode),
-				StreetName: strings.TrimSpace(input.PayerAddress),
+				City:         strings.TrimSpace(input.PayerCity),
+				State:        strings.TrimSpace(input.PayerState),
+				ZipCode:      zipCode,
+				StreetName:   streetName,
+				StreetNumber: streetNumber,
 			},
+		},
+		AdditionalInfo: &order.AdditionalInfoRequest{
+			PayerAuthenticationType:    "WEB",
+			PayerRegistrationDate:      regDate,
+			PayerIsFirstPurchaseOnLine: true,
+			PayerLastPurchase:          lastPurchaseDate,
 		},
 		Transactions: &order.TransactionRequest{Payments: []order.PaymentRequest{{
 			Amount:        fmt.Sprintf("%.2f", amount),
@@ -170,14 +209,65 @@ func splitFullName(fullName string) (string, string) {
 	return parts[0], strings.Join(parts[1:], " ")
 }
 
-func identificationTypeForTaxID(taxID string) string {
-	digits := strings.Map(func(r rune) rune {
+func cleanDigits(str string) string {
+	var sb strings.Builder
+	for _, r := range str {
 		if r >= '0' && r <= '9' {
-			return r
+			sb.WriteRune(r)
 		}
-		return -1
-	}, taxID)
+	}
+	return sb.String()
+}
 
+func parsePhone(rawPhone string) (string, string) {
+	digits := cleanDigits(rawPhone)
+	if strings.HasPrefix(digits, "55") && (len(digits) == 12 || len(digits) == 13) {
+		digits = digits[2:]
+	}
+	if len(digits) >= 10 {
+		return digits[:2], digits[2:]
+	}
+	if len(digits) > 2 {
+		return digits[:2], digits[2:]
+	}
+	return "11", digits
+}
+
+func parseStreetAndNumber(rawAddress string) (string, string) {
+	rawAddress = strings.TrimSpace(rawAddress)
+	if rawAddress == "" {
+		return "Rua", "1"
+	}
+
+	if parts := strings.Split(rawAddress, ","); len(parts) >= 2 {
+		street := strings.TrimSpace(parts[0])
+		rest := strings.TrimSpace(parts[1])
+		numParts := strings.Fields(rest)
+		if len(numParts) > 0 {
+			numDigits := cleanDigits(numParts[0])
+			if numDigits != "" {
+				return street, numDigits
+			}
+			return street, numParts[0]
+		}
+		return street, "1"
+	}
+
+	fields := strings.Fields(rawAddress)
+	if len(fields) > 1 {
+		lastField := fields[len(fields)-1]
+		numDigits := cleanDigits(lastField)
+		if numDigits != "" && len(numDigits) <= 6 {
+			street := strings.Join(fields[:len(fields)-1], " ")
+			return street, numDigits
+		}
+	}
+
+	return rawAddress, "1"
+}
+
+func identificationTypeForTaxID(taxID string) string {
+	digits := cleanDigits(taxID)
 	switch len(digits) {
 	case 11:
 		return "CPF"

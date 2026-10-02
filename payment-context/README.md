@@ -72,6 +72,13 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 - Added flexible JSON unmarshaling for `user_id` in `OAuthToken` to support both numeric and string IDs from Mercado Pago's OAuth API.
 - Updated `.env.example` files across `payment-request-api` and `payment-consumer` to include all required Mercado Pago environment variables (`MERCADO_PAGO_WEBHOOK_SECRET`, `MERCADO_PAGO_ACCESS_TOKEN`, `MERCADO_PAGO_WEBHOOK_URL`, `PIX_EXPIRATION_TIME`) and credential mappings.
 
+- Standardized Orders API payload in `payment-consumer` to include `Items: []order.ItemsRequest` (Title, UnitPrice, Quantity, CategoryID, Description) fulfilling Mercado Pago Quality Checklist approval criteria.
+- Removed sensitive logging of webhook secrets, complete headers, and signature manifests in `payment-request-api` to prevent token/secret leakage.
+- Enhanced `dataID` webhook extraction to seamlessly fallback between query parameters `data.id`, `id` and payload JSON candidate IDs (`extractWebhookDataID`).
+- Made `GatewayReader.GetPayment` resiliently fallback to `order.Client.Get` if a numeric ID lookup on legacy `payment.Client.Get` is not found.
+- Handled unconfigured refund flow cleanly in the background reconciler worker without error log spamming.
+- Created root navigable `README.md` with complete Mermaid workflow architecture diagrams, and dedicated `payment-consumer/README.md`.
+
 ## Still required
 
 - Add application authentication/authorization around the OAuth start route for production use.
@@ -85,10 +92,9 @@ Persist at least the gross amount, Mercado Pago fee, marketplace fee, seller net
 
 ## Current continuation point
 
-- Branch: `feature/mercado-pago-split-refunds`
-- Last completed commit: `e801d1b feat: reconcile pending Mercado Pago refunds`.
-- Documentation commit: `336785d docs: add manual payment testing guide`.
-- Next step: add application authentication/authorization around the OAuth start route.
+- Branch: `audit/security-quality-optimization`
+- Last audit & hardening: Comprehensive Mercado Pago Quality Checklist audit, sanitization of sensitive logs, webhook candidate ID resolution, Orders items enrichment, root README & flowcharts creation.
+- Next step: CI/CD validation and pull request review.
 
 Payment creation now sends `application_fee` only when `seller_id` and the matching encrypted seller token are available. A global token is never used for a seller split.
 

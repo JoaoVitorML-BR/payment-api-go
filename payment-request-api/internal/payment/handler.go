@@ -159,12 +159,6 @@ func (h *PaymentHandler) CreatePaymentRequestHandler(c *gin.Context) {
 //   - 4xx (except 401/403): permanent rejection — stop retries.
 //   - 5xx / 408: temporary failure — Mercado Pago will retry with backoff.
 func (h *PaymentHandler) MercadoPagoWebhookHandler(c *gin.Context) {
-	for key, values := range c.Request.Header {
-		log.Printf("[WEBHOOK] HEADER %s: %v", key, values)
-	}
-
-	fmt.Printf("***WebehookSecretLocal***: %s\n", h.config.MercadoPagoWebhookSecret)
-
 	xSignature := c.GetHeader("X-Signature")
 	xRequestID := c.GetHeader("X-Request-Id")
 
@@ -185,10 +179,13 @@ func (h *PaymentHandler) MercadoPagoWebhookHandler(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[WEBHOOK] Raw URL Query: %s", c.Request.URL.RawQuery)
-	log.Printf("[WEBHOOK] Raw Body: %s", string(bodyBytes))
-
 	dataID := strings.TrimSpace(c.Query("data.id"))
+	if dataID == "" {
+		dataID = strings.TrimSpace(c.Query("id"))
+	}
+	if dataID == "" {
+		dataID = extractWebhookDataID(bodyBytes)
+	}
 
 	if dataID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -201,20 +198,16 @@ func (h *PaymentHandler) MercadoPagoWebhookHandler(c *gin.Context) {
 		!isLiveModeWebhook(bodyBytes)
 
 	if skipSignature {
-
 		log.Printf(
 			"[WEBHOOK] WARNING: signature check skipped (test mode, WEBHOOK_SKIP_SIGNATURE=true)",
 		)
-
 	} else {
-
 		if err := webhook.VerifySignature(
 			xSignature,
 			xRequestID,
 			dataID,
 			time.Now(),
 		); err != nil {
-
 			log.Printf(
 				"[WEBHOOK] signature verification failed: dataID=%s requestID=%s error=%v",
 				dataID,
@@ -243,6 +236,39 @@ func (h *PaymentHandler) MercadoPagoWebhookHandler(c *gin.Context) {
 
 		c.JSON(http.StatusOK, gin.H{
 			"status": "simulation_verified",
+		})
+		return
+	}
+
+	topic := strings.TrimSpace(c.Query("topic"))
+	if topic == "" {
+		topic = strings.TrimSpace(c.Query("type"))
+	}
+	action := strings.TrimSpace(c.Query("action"))
+	if len(bodyBytes) > 0 {
+		var rawMap map[string]any
+		if err := json.Unmarshal(bodyBytes, &rawMap); err == nil {
+			if t, ok := rawMap["topic"].(string); ok && topic == "" {
+				topic = strings.TrimSpace(t)
+			}
+			if t, ok := rawMap["type"].(string); ok && topic == "" {
+				topic = strings.TrimSpace(t)
+			}
+			if a, ok := rawMap["action"].(string); ok && action == "" {
+				action = strings.TrimSpace(a)
+			}
+		}
+	}
+
+	if topic == "mp-connect" || topic == "topic_application_linking" || strings.HasPrefix(action, "application.") {
+		log.Printf(
+			"[WEBHOOK] OAuth mp-connect notification received: topic=%s action=%s dataID=%s",
+			topic,
+			action,
+			dataID,
+		)
+		c.JSON(http.StatusOK, gin.H{
+			"status": "received",
 		})
 		return
 	}

@@ -62,20 +62,16 @@ func (g *GatewayReader) GetPayment(ctx context.Context, gatewayPaymentID string,
 	if numericID, err := strconv.ParseInt(id, 10, 64); err == nil && numericID > 0 {
 		payClient := mppayment.NewClient(sdkConfig)
 		payResult, payErr := payClient.Get(ctx, int(numericID))
-		if payErr != nil {
-			return nil, fmt.Errorf("mercado pago: get legacy payment %s: %w", id, payErr)
+		if payErr == nil && payResult != nil {
+			cents, _ := floatToCents(payResult.TransactionAmount)
+			return &payment.GatewayPaymentDetails{
+				GatewayPaymentID:  strconv.Itoa(payResult.ID),
+				ExternalReference: strings.TrimSpace(payResult.ExternalReference),
+				Status:            strings.TrimSpace(payResult.Status),
+				AmountCents:       cents,
+				Currency:          strings.TrimSpace(payResult.CurrencyID),
+			}, nil
 		}
-		if payResult == nil {
-			return nil, fmt.Errorf("mercado pago: legacy payment %s not found", id)
-		}
-		cents, _ := floatToCents(payResult.TransactionAmount)
-		return &payment.GatewayPaymentDetails{
-			GatewayPaymentID:  strconv.Itoa(payResult.ID),
-			ExternalReference: strings.TrimSpace(payResult.ExternalReference),
-			Status:            strings.TrimSpace(payResult.Status),
-			AmountCents:       cents,
-			Currency:          strings.TrimSpace(payResult.CurrencyID),
-		}, nil
 	}
 
 	result, err := order.NewClient(sdkConfig).Get(ctx, id)
