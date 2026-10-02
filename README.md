@@ -30,20 +30,20 @@ Sistema de microsserviços de alto desempenho e tolerância a falhas para proces
 O sistema adota o padrão de arquitetura orientada a eventos (EDA) desacoplando a recepção do pedido de pagamento da execução síncrona junto às adquirentes:
 
 ```mermaid
-graph TD
-    Client([Cliente / Frontend]) -->|1. POST /payment| API[payment-request-api]
-    API -->|2. Salva localmente 'pending'| DB[(PostgreSQL)]
-    API -->|3. Publica 'payment.requested'| RMQ[(RabbitMQ)]
-    API -->|4. Retorna UUID imediatamente| Client
+flowchart TD
+    Client(["Cliente / Frontend"]) -->|"1. POST /payment"| API["payment-request-api"]
+    API -->|"2. Salva localmente (pending)"| DB[("PostgreSQL")]
+    API -->|"3. Publica payment.requested"| RMQ[("RabbitMQ")]
+    API -->|"4. Retorna UUID imediatamente"| Client
     
-    RMQ -->|5. Consome mensagem| Worker[payment-consumer]
-    Worker -->|6. Chama Orders API / Pix| MP[Mercado Pago / Stripe]
-    MP -->|7. QR Code / Gateway ID| Worker
-    Worker -->|8. Atualiza attempt & status| DB
+    RMQ -->|"5. Consome mensagem"| Worker["payment-consumer"]
+    Worker -->|"6. Chama Orders API / Pix"| MP["Mercado Pago / Stripe"]
+    MP -->|"7. QR Code / Gateway ID"| Worker
+    Worker -->|"8. Atualiza attempt e status"| DB
     
-    MP -->|9. Webhook Notificação| API
-    API -->|10. Valida HMAC & Consulta MP| MP
-    API -->|11. Atualiza 'succeeded'| DB
+    MP -->|"9. Webhook Notificação"| API
+    API -->|"10. Valida HMAC e Consulta MP"| MP
+    API -->|"11. Atualiza status (succeeded)"| DB
 ```
 
 ---
@@ -182,23 +182,23 @@ Garante a consistência eventual e recuperação em caso de quedas de rede ou we
 
 ```mermaid
 flowchart TD
-    Start([Tick do Reconciliador - cada 60s]) --> QueryPending[Busca pagamentos 'pending' com mais de 2 min]
-    QueryPending --> CheckPayments{Existem pagamentos?}
-    CheckPayments -- Sim --> LoopPayments[Para cada pagamento]
-    CheckPayments -- Não --> QueryRefunds[Busca reembolsos com status 'processing']
+    Start(["Tick do Reconciliador - cada 60s"]) --> QueryPending["Busca pagamentos pending com mais de 2 min"]
+    QueryPending --> CheckPayments{"Existem pagamentos?"}
+    CheckPayments -- "Sim" --> LoopPayments["Para cada pagamento"]
+    CheckPayments -- "Não" --> QueryRefunds["Busca reembolsos com status processing"]
     
-    LoopPayments --> CallMP[Consulta Mercado Pago GET /v1/orders]
-    CallMP --> UpdateDB[Atualiza estado local se terminal no gateway]
+    LoopPayments --> CallMP["Consulta Mercado Pago GET /v1/orders"]
+    CallMP --> UpdateDB["Atualiza estado local se terminal no gateway"]
     UpdateDB --> QueryRefunds
     
-    QueryRefunds --> CheckRefunds{Existem refunds 'processing'?}
-    CheckRefunds -- Sim --> RecoverRefund[Consulta lista de refunds na adquirente]
-    RecoverRefund --> MatchRefund{Refund aprovado no MP?}
-    MatchRefund -- Sim --> MarkSucceeded[Marca status='succeeded' no banco local]
-    MatchRefund -- Não --> NextRefund[Mantém processing / auditoria]
-    MarkSucceeded --> End([Fim do Ciclo])
-    NextRefund --> End
-    CheckRefunds -- Não --> End
+    QueryRefunds --> CheckRefunds{"Existem refunds processing?"}
+    CheckRefunds -- "Sim" --> RecoverRefund["Consulta lista de refunds na adquirente"]
+    RecoverRefund --> MatchRefund{"Refund aprovado no MP?"}
+    MatchRefund -- "Sim" --> MarkSucceeded["Marca status succeeded no banco local"]
+    MatchRefund -- "Não" --> NextRefund["Mantém processing / auditoria"]
+    MarkSucceeded --> FinishNode(["Fim do Ciclo"])
+    NextRefund --> FinishNode
+    CheckRefunds -- "Não" --> FinishNode
 ```
 
 ---

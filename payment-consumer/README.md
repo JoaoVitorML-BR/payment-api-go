@@ -30,17 +30,17 @@ Microsserviço em Go responsável pelo processamento assíncrono e resiliente de
 ## 🏗️ Arquitetura do Worker
 
 ```mermaid
-graph TD
-    Queue[(RabbitMQ: payment.requested)] --> Processor[PaymentRequestedProcessor]
-    Processor --> CheckAttempt{Verifica tentativas prévias}
-    CheckAttempt -- Já processado com sucesso --> Ack[Descarta / Ack]
-    CheckAttempt -- Limite de retentativas excedido --> MarkFailed[Marca status='failed' no DB]
-    CheckAttempt -- Processar --> CallGateway[Chama Mercado Pago Orders API]
+flowchart TD
+    Queue[("RabbitMQ: payment.requested")] --> Processor["PaymentRequestedProcessor"]
+    Processor --> CheckAttempt{"Verifica tentativas prévias"}
+    CheckAttempt -- "Já processado com sucesso" --> Ack["Descarta / Ack"]
+    CheckAttempt -- "Limite de retentativas excedido" --> MarkFailed["Marca status failed no DB"]
+    CheckAttempt -- "Processar" --> CallGateway["Chama Mercado Pago Orders API"]
     
-    CallGateway --> GatewayResp{Resposta do Gateway}
-    GatewayResp -- Sucesso --> SaveAttemptSuccess[Salva tentativa no DB + QR Code Pix]
-    GatewayResp -- Erro Transitório --> Retry[Registra tentativa e aguarda retentativa]
-    GatewayResp -- Erro Permanente --> MarkFailed
+    CallGateway --> GatewayResp{"Resposta do Gateway"}
+    GatewayResp -- "Sucesso" --> SaveAttemptSuccess["Salva tentativa no DB + QR Code Pix"]
+    GatewayResp -- "Erro Transitório" --> Retry["Registra tentativa e aguarda retentativa"]
+    GatewayResp -- "Erro Permanente" --> MarkFailed
 ```
 
 ---
