@@ -97,5 +97,5 @@ func NewRouter(cfg *config.Config) *gin.Engine {
 	)
 	reconciler.Start(context.Background())
 
-	return server.SetupRouter(paymentHandler, oauthHandler)
+	return server.SetupRouter(paymentHandler, oauthHandler, cfg)
 }
